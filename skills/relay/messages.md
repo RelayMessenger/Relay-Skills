@@ -35,7 +35,7 @@ A message carries 1–32 parts. Order is presentation order.
 | `voice_memo`   | `{ "type": "voice_memo", "url": "https://…" }` or `{ "type": "voice_memo", "attachment_id": "att_…" }` | exactly one source; `duration_ms` is optional                         |
 
 > **Note:**
-> Upload a file to get an `attachment_id`, or pass a public `url`. See [Attachments](https://docs.relayapp.im/guides/attachments).
+>   Upload a file to get an `attachment_id`, or pass a public `url`. See [Attachments](https://docs.relayapp.im/guides/attachments).
 
 `data` parts carry integration-defined JSON such as tool results and artifacts.
 Relay also recognizes the v1 [message component](https://docs.relayapp.im/components) kinds: `buttons`,
@@ -88,7 +88,7 @@ The user can always type a free-form answer instead.
 Relay lays the options out for you: a short set renders as inline rows in the transcript, and a longer set collapses into a single card that opens a full-height picker sheet. You don't choose the presentation.
 
 > **Note:**
-> Quick-reply suggestions are separate from message components. Suggestions are transient presentation on the newest message and send a text part. Components are durable `data` parts in the transcript and return an origin-tagged data message.
+>   Quick-reply suggestions are separate from message components. Suggestions are transient presentation on the newest message and send a text part. Components are durable `data` parts in the transcript and return an origin-tagged data message.
 
 ## Message components
 

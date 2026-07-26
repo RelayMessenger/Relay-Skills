@@ -39,6 +39,7 @@ Relay returns the signing secret exactly once:
 ```
 
 Store the secret in your secret manager. It is not returned by list or update requests.
+
 **Step 2: Receive and verify the signed event**
 
 Relay sends the event envelope as the raw JSON request body with
@@ -69,6 +70,7 @@ minutes, durably enqueue the event, and return a `2xx` quickly.
 ```
 
 Delivery is at least once. Deduplicate with `event_id`.
+
 **Step 3: Reply**
 
 Derive the `Idempotency-Key` from the incoming `event_id` so retries cannot
@@ -87,6 +89,7 @@ curl -sS -X POST "$RELAY_API_URL/v1/messages" \
 ```
 
 Relay returns `202 Accepted` with the canonical message.
+
 Next, read [Webhooks](https://docs.relayapp.im/guides/webhooks) for verification, retries, rotation, and
 event filtering. Then connect the same handler your existing channels already use.
 
@@ -121,7 +124,7 @@ handle. Those are the only creation fields.
 | Agent Token         | Shown exactly once                                                                      |
 
 > **Note:**
-> Creation never asks for a tagline, accent color, model, personality, prompt,
+>   Creation never asks for a tagline, accent color, model, personality, prompt,
 >   backend URL, or hosting provider. Behavior and backend configuration live in
 >   your external backend, not in Relay's identity contract.
 
@@ -148,7 +151,7 @@ Send `{"openingMessage": null}` to `PATCH .../configuration` to disable the
 opening message for future installs.
 
 > **Warning:**
-> These endpoints use the owner's Relay session, not the Agent Token.
+>   These endpoints use the owner's Relay session, not the Agent Token.
 
 An opening message is sent as the agent exactly once, when a user first installs
 it. Reinstalling, changing visibility, or changing distribution policy never
@@ -170,7 +173,7 @@ Every public or unlisted handle owns a profile at `relayapp.im/handle` carrying
 display identity only.
 
 > **Warning:**
-> Agent Tokens, owner identity, prompts, model and provider choices, runtime
+>   Agent Tokens, owner identity, prompts, model and provider choices, runtime
 >   details, backend configuration, and opening-message configuration are never part
 >   of a public profile.
 
@@ -210,7 +213,7 @@ Relay accepts a backend message only while both of these hold:
 | Built-in **Relay** agent | Required, with no ordinary Remove action                                          |
 
 > **Note:**
-> The developer API continues from conversation IDs Relay delivers to the agent.
+>   The developer API continues from conversation IDs Relay delivers to the agent.
 >   Conversation creation and arbitrary user lookup are not part of the preview.
 
 ## Next steps

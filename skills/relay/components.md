@@ -8,15 +8,16 @@ Message components are recognized `data` parts inside an ordinary Relay message.
 
 Components are conversational decisions, not app surfaces: no pagination, toggles, dashboards, or silent interactions. Kinds requiring interactions without a visible transcript artifact are rejected.
 
-- **[Buttons](https://docs.relayapp.im/components/buttons)** — A vertical stack with up to five options.
+  - **[Buttons](https://docs.relayapp.im/components/buttons)**: A vertical stack with up to five options.
 
-  - **[Select](https://docs.relayapp.im/components/select)** — A collapsed row that opens a native single-select sheet.
+  - **[Select](https://docs.relayapp.im/components/select)**: A collapsed row that opens a native single-select sheet.
 
-  - **[Card](https://docs.relayapp.im/components/card)** — A slot-based media card with up to two actions.
+  - **[Card](https://docs.relayapp.im/components/card)**: A slot-based media card with up to two actions.
 
-  - **[Confirm](https://docs.relayapp.im/components/confirm)** — A two-role confirm and deny decision.
+  - **[Confirm](https://docs.relayapp.im/components/confirm)**: A two-role confirm and deny decision.
 
-  - **[Agent permission request](https://docs.relayapp.im/components/agent_permission_request)** — The permission component already emitted by relayapp integrations.
+  - **[Agent permission request](https://docs.relayapp.im/components/agent_permission_request)**: The permission component already emitted by relayapp integrations.
+
 ## One message path
 
 An agent sends a component as `{ "type": "data", "data": { "kind": "…" } }`. Relay validates recognized v1 kinds and adds `data.fallback` when it is absent. A tap sends a normal user message whose data part identifies the source option:
@@ -67,10 +68,10 @@ Relay synthesizes a missing component fallback from the prompt or title followed
 The feature flag controls client rendering only. It does not block component sending, validation, or storage. Unknown `data.kind` values pass through unchanged so clients can render `data.fallback` or the message-level `fallback_text`. Consumers must ignore unknown fields inside known kinds.
 
 > **Warning:**
-> Component parts are valid only in 1:1 threads in v1. The server returns `422 invalid_request` when a message with component parts targets a group conversation. Group tap semantics is an open question for the groups component release.
+>   Component parts are valid only in 1:1 threads in v1. The server returns `422 invalid_request` when a message with component parts targets a group conversation. Group tap semantics is an open question for the groups component release.
 
 > **Note:**
-> [Quick-reply suggestions](https://docs.relayapp.im/guides/sending-messages#quick-replies) are a separate feature. Suggestions are transient chips attached to the newest message and send their visible text. Components are durable transcript parts and return an origin-tagged data message.
+>   [Quick-reply suggestions](https://docs.relayapp.im/guides/sending-messages#quick-replies) are a separate feature. Suggestions are transient chips attached to the newest message and send their visible text. Components are durable transcript parts and return an origin-tagged data message.
 
 The machine-readable registry is `docs/components/catalog.json`. Each catalog entry points to its standalone schema under `schemas/parts/` and its send, stored, and tap-result examples under `examples/components/`.
 
@@ -96,7 +97,7 @@ Use `buttons` when a short set of distinct actions should remain attached to the
 ## Preview
 
 > **Note:**
-> TODO: add the real iOS lane capture from `/tmp/relay-component-buttons.png`. This slot intentionally has no fabricated screenshot.
+>   TODO: add the real iOS lane capture from `/tmp/relay-component-buttons.png`. This slot intentionally has no fabricated screenshot.
 
 ## Wire example
 
@@ -204,7 +205,7 @@ Use `select` when the user should choose one item from a longer, optionally sect
 ## Preview
 
 > **Note:**
-> TODO: add the real iOS lane capture from `/tmp/relay-component-select.png`. This slot intentionally has no fabricated screenshot.
+>   TODO: add the real iOS lane capture from `/tmp/relay-component-select.png`. This slot intentionally has no fabricated screenshot.
 
 ## Wire example
 
@@ -317,7 +318,7 @@ Use `confirm` for a consequential binary decision. The two named roles keep conf
 ## Preview
 
 > **Note:**
-> TODO: add the real iOS lane capture from `/tmp/relay-component-confirm.png`. This slot intentionally has no fabricated screenshot.
+>   TODO: add the real iOS lane capture from `/tmp/relay-component-confirm.png`. This slot intentionally has no fabricated screenshot.
 
 ## Wire example
 
@@ -420,7 +421,7 @@ Use `card` for one rich object whose image, title, metadata, destination, and ac
 ## Preview
 
 > **Note:**
-> TODO: add the real iOS lane capture from `/tmp/relay-component-card.png`. This slot intentionally has no fabricated screenshot.
+>   TODO: add the real iOS lane capture from `/tmp/relay-component-card.png`. This slot intentionally has no fabricated screenshot.
 
 ## Wire example
 
@@ -542,7 +543,7 @@ subtitle, captions, and actions.
 ## Preview
 
 > **Note:**
-> TODO: add the real iOS lane capture from `/tmp/relay-component-agent-permission-request.png`. This slot intentionally has no fabricated screenshot.
+>   TODO: add the real iOS lane capture from `/tmp/relay-component-agent-permission-request.png`. This slot intentionally has no fabricated screenshot.
 
 ## Wire example
 

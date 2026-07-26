@@ -24,7 +24,7 @@ through exactly one transport.
 | Long polling                        | Your backend cannot, such as a local coding-agent bridge |
 
 > **Warning:**
-> The two transports are mutually exclusive. Polling while a webhook is enabled
+>   The two transports are mutually exclusive. Polling while a webhook is enabled
 >   returns `409 conflict`.
 
 ### Signed webhooks
@@ -33,15 +33,19 @@ through exactly one transport.
 
 The event and one outbox row per matching active endpoint are written in the
 same transaction.
+
 **Step 2: Relay signs and POSTs it**
 
 The exact JSON body is signed and sent to your registered HTTPS URL.
+
 **Step 3: Your backend verifies and deduplicates**
 
 Verify the signature before parsing, then deduplicate on `event_id`.
+
 **Step 4: Your backend accepts durably**
 
 Enqueue the event and return `2xx` quickly.
+
 Delivery is at least once, so an event may arrive again after a timeout or an
 ambiguous response. A successful `message.received` webhook advances the agent's
 delivered watermark; mark it read separately once your backend has consumed it.
@@ -66,7 +70,7 @@ next request. Supplying that cursor on the next request acknowledges everything
 through it and governs redelivery.
 
 > **Note:**
-> The sender-visible delivered receipt advances as soon as Relay hands the page to
+>   The sender-visible delivered receipt advances as soon as Relay hands the page to
 >   the consumer. The durable acknowledgement remains the redelivery watermark.
 
 Cursors are scoped to the agent, not the token. Rotating an Agent Token never
@@ -115,7 +119,7 @@ log. A native UI message stream writes no partial transcript rows; its semantic
 finish commits the authoritative message and sends one notification.
 
 > **Warning:**
-> If generation aborts, errors, or disconnects before completion, Relay commits
+>   If generation aborts, errors, or disconnects before completion, Relay commits
 >   nothing. Retry the complete stream with the same idempotency key.
 
 ## Recovery rule
@@ -203,7 +207,7 @@ const event = new Webhook(env.RELAY_WEBHOOK_SECRET).verify(rawBody, {
 ```
 
 > **Note:**
-> On Cloudflare Agents, verify in `onRequest()`, enqueue the event with the Agent
+>   On Cloudflare Agents, verify in `onRequest()`, enqueue the event with the Agent
 >   SDK's durable `this.queue()`, and return `202` before model or tool work. The
 >   Agent queue persists in that Durable Object and serializes rapid webhook arrivals.
 
@@ -263,7 +267,7 @@ There is no component-specific side channel: ordinary component taps arrive as
 reports only its completed or expired terminal state.
 
 > **Warning:**
-> Ignore unknown event types. Relay adds them additively, and a receiver that
+>   Ignore unknown event types. Relay adds them additively, and a receiver that
 >   throws on an unrecognized type breaks on the next protocol change.
 
 See [Event types](https://docs.relayapp.im/reference/events) for payloads and [Delivery model](https://docs.relayapp.im/guides/delivery-model)
@@ -445,14 +449,14 @@ structured old and new `system_mutation`, and the canonical system `message`. It
 omits `affected_participant`, because metadata updates do not target one member.
 
 > **Warning:**
-> No lifecycle event grants ambient transcript access.
+>   No lifecycle event grants ambient transcript access.
 
 Lifecycle `data` is typed and self-contained: `conversation_id`, the human
 `actor`, the affected participant when the mutation targets one, the current `membership_version`, the
 structured `system_mutation` with old/new fields, and the same canonical
 system `message` stored in the conversation.
 
-```json Membership change
+  ```json Membership change
   {
     "conversation_id": "cnv_01JZC7K4RQ",
     "actor": { "kind": "user", "id": "usr_01JZU1F0BD" },
@@ -540,6 +544,7 @@ system `message` stored in the conversation.
     }
   }
   ```
+
 Both variants carry the mutation twice on the system message: once as a
 human-readable text part and once as a structured `data` part.
 
@@ -775,7 +780,7 @@ its tail in `last_name`. Greet with them, but store `name` if you need the
 exact value.
 
 > **Note:**
-> In a group, read `sender.id` from each `message.received` to tell participants
+>   In a group, read `sender.id` from each `message.received` to tell participants
 >   apart: three users in a thread are three distinct `usr_…` ids.
 
 ## Scope

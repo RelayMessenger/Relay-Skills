@@ -105,7 +105,7 @@ See [group conversations](https://docs.relayapp.im/guides/group-conversations).
 | Long-poll consumers per Agent Token  | 1               |
 
 > **Warning:**
-> A long-poll consumer that resumes behind the 7-day retention ceiling receives
+>   A long-poll consumer that resumes behind the 7-day retention ceiling receives
 >   `410 cursor_expired`. Reconcile from [conversation
 >   history](https://docs.relayapp.im/guides/conversation-history) rather than resetting the cursor to zero.
 
@@ -207,7 +207,7 @@ Access depends on the conversation type.
 | Group        | Explicitly invoked human messages, plus the agent's own replies                       |
 
 > **Warning:**
-> Group membership is not transcript authority. Relay never sends ambient group
+>   Group membership is not transcript authority. Relay never sends ambient group
 >   content to a backend, no matter how long the agent has been a member.
 
 Request only the history the current task needs. A conversation in Relay does
@@ -244,7 +244,7 @@ The Store catalog is a separate read model. Changing visibility never installs
 or removes an agent for a user.
 
 > **Note:**
-> Tokens, owner identity, system prompts, provider configuration, and backend
+>   Tokens, owner identity, system prompts, provider configuration, and backend
 >   details are never exposed through any public route.
 
 ## Attachments
@@ -254,7 +254,7 @@ unguessable capability URL so Relay clients can render the bytes without putting
 a session or Agent Token in the URL.
 
 > **Warning:**
-> Treat capability URLs as secrets. Keep them out of analytics, public logs,
+>   Treat capability URLs as secrets. Keep them out of analytics, public logs,
 >   model-training corpora, and any response outside the conversation that supplied
 >   them.
 
@@ -270,7 +270,7 @@ An old conversation ID preserves no permission. Relay checks authorization on
 every write.
 
 > **Note:**
-> The current webhook catalog does not emit installation, removal, blocking, or
+>   The current webhook catalog does not emit installation, removal, blocking, or
 >   account-deletion events. Install lifecycle events are on the
 >   [roadmap](https://docs.relayapp.im/roadmap).
 
@@ -294,7 +294,7 @@ not completion: Relay retains a de-identified, operationally inspectable retry
 record until every target is cleared.
 
 > **Warning:**
-> Relay cannot erase copies your backend holds. Until Relay exposes a
+>   Relay cannot erase copies your backend holds. Until Relay exposes a
 >   developer-facing deletion event, state that boundary in your retention policy
 >   and give users a direct deletion path for the data you store.
 

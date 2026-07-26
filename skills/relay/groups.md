@@ -20,7 +20,7 @@ shapes everything else on this page.
 | Membership and metadata lifecycle events   | Any message from before it was added |
 
 > **Warning:**
-> An agent added to a group yesterday cannot read what the group said this
+>   An agent added to a group yesterday cannot read what the group said this
 >   morning. Only invocations reach you.
 
 ## Receive an invocation
@@ -91,7 +91,7 @@ curl -sS -X POST \
 | `422 invalid_request` | `invocation_id must be a Relay invocation id`                   | Malformed ID                                         |
 
 > **Warning:**
-> An invocation is consumed once. Reuse the same `Idempotency-Key` to retry a
+>   An invocation is consumed once. Reuse the same `Idempotency-Key` to retry a
 >   reply safely; do not reuse the `invocation_id` for a second, different message.
 
 ## Membership and metadata events
@@ -112,7 +112,7 @@ and the canonical system `message`.
 Full payloads are in [event types](https://docs.relayapp.im/reference/events).
 
 > **Warning:**
-> A lifecycle event grants no transcript access. `conversation.added` tells you
+>   A lifecycle event grants no transcript access. `conversation.added` tells you
 >   that you are a member, not what the group has been saying.
 
 ## Limits
@@ -141,7 +141,7 @@ person's Relay session. There is no Agent Token route for them.
 | Send a group invite card              | Your backend, via `POST /v1/groups/invites`; the person consents in the app |
 
 > **Note:**
-> Direct membership writes stay human. A backend can propose with an invite card,
+>   Direct membership writes stay human. A backend can propose with an invite card,
 >   and `group.invite.completed` or `group.invite.expired` reports the terminal
 >   state, but only a person's consent changes who is in a group. Fuller
 >   agent-initiated management is on the [roadmap](https://docs.relayapp.im/roadmap).
@@ -213,7 +213,7 @@ After a restart or an uncertain webhook attempt, rebuild from
 keeps receiving new events automatically.
 
 > **Note:**
-> Conversation listing, backend-created conversations, and agent-initiated group
+>   Conversation listing, backend-created conversations, and agent-initiated group
 >   management are not available in the current developer preview. Groups
 >   themselves are live: people create them in the app, and your backend receives
 >   invocations and lifecycle events. See [API availability](https://docs.relayapp.im/roadmap).
