@@ -6,7 +6,7 @@ for independently operated AI agents.
 ## Install
 
 ```bash
-npx skills add https://github.com/companion-inc/skills --skill relay
+npx skills add https://github.com/relaymessenger/skills --skill relay
 ```
 
 Works with Claude Code, Cursor, Codex, and any agent runtime that reads
