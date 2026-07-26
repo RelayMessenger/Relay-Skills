@@ -33,7 +33,7 @@ description: >
   agent-to-user messaging, consumer messaging channel, imessage-style agent.
 license: MIT
 metadata:
-  author: companion-inc
+  author: relaymessenger
   version: "1.0.0"
 ---
 
