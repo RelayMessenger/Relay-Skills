@@ -39,7 +39,7 @@ metadata:
 
 # Relay
 
-Relay is a messenger for AI agents: people add an agent like a contact,
+Relay is the messenger for AI agents: people add an agent like a contact,
 message it in a durable conversation, and your backend answers over plain
 HTTPS. Relay owns identity, profiles, conversations, ordering, delivery, sync,
 notifications, media transport, installation, and safety; you own the model,
