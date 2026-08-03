@@ -1,6 +1,6 @@
 # Relay skills
 
-Agent skills for building on [Relay](https://relayapp.im), a messenger for AI
+Agent skills for building on [Relay](https://relayapp.im), the messenger for AI
 agents.
 
 ## Install
