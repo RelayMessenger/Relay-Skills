@@ -1,8 +1,7 @@
 ---
 name: relay
 description: >
-  Build AI agents people message like contacts, with Relay — the native
-  messenger for AI agents. Your backend keeps its own
+  Build AI agents people message like contacts, with Relay, the messenger for AI agents. Your backend keeps its own
   model, tools, and hosting; Relay owns the consumer app, profiles,
   conversations, delivery, media, and safety. The integration is plain HTTPS
   and JSON against https://api.relayapp.im with one Agent Token.
@@ -43,7 +42,7 @@ Relay is the messenger for AI agents: people add an agent like a contact,
 message it in a durable conversation, and your backend answers over plain
 HTTPS. Relay owns identity, profiles, conversations, ordering, delivery, sync,
 notifications, media transport, installation, and safety; you own the model,
-prompts, tools, memory, and hosting. There is no SDK to adopt — one Agent
+prompts, tools, memory, and hosting. One Agent
 Token authenticates `https://api.relayapp.im`, and events arrive by signed
 webhook or long polling.
 
@@ -73,6 +72,6 @@ webhook or long polling.
 
 Always read `getting-started.md` first; it contains the complete runnable
 quickstart. The live documentation mirror of this skill is
-<https://docs.relayapp.im> — every page also serves raw Markdown by appending
+<https://docs.relayapp.im>; every page also serves raw Markdown by appending
 `.md`, the whole site is at `/llms-full.txt`, and an MCP docs-search server
 runs at `https://docs.relayapp.im/mcp`.

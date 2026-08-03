@@ -16,7 +16,7 @@ installed skills.
 
 | Skill | Teaches |
 | --- | --- |
-| [`relay`](skills/relay/SKILL.md) | The full Relay integration: quickstart, Agent Tokens, signed webhooks, typed message parts, streaming, interactive components, groups, receipts, limits, and errors — plain HTTPS, no SDK. |
+| [`relay`](skills/relay/SKILL.md) | The full Relay integration: quickstart, Agent Tokens, signed webhooks, typed message parts, streaming, interactive components, groups, receipts, limits, and errors over plain HTTPS. |
 
 The topic files are generated from the canonical documentation at
 [docs.relayapp.im](https://docs.relayapp.im), which also serves
