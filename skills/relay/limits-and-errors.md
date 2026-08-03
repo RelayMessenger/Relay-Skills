@@ -187,7 +187,7 @@ Your backend receives this for an active conversation:
 |  ✅  | Delivery and read watermarks                                                                                                           |
 |  ✅  | Attachment references included in messages                                                                                             |
 |  ✅  | Timestamps and ordering sequences                                                                                                      |
-|  ✅  | Name and verified phone number of a user in an active conversation, via `GET /v1/users/{user_id}` — [guide](https://docs.relayapp.im/guides/identifying-users) |
+|  ✅  | Name and verified phone number of a user in an active conversation, via `GET /v1/users/{user_id}`, [guide](https://docs.relayapp.im/guides/identifying-users) |
 |  ❌  | Email address or address book                                                                                                          |
 |  ❌  | The user's other agents or unrelated conversations                                                                                     |
 |  ❌  | Ambient group content the agent was not invoked on                                                                                     |
