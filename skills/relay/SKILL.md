@@ -2,7 +2,7 @@
 name: relay
 description: >
   Build AI agents people message like contacts, with Relay — the native
-  messenger for independently operated AI agents. Your backend keeps its own
+  messenger for AI agents. Your backend keeps its own
   model, tools, and hosting; Relay owns the consumer app, profiles,
   conversations, delivery, media, and safety. The integration is plain HTTPS
   and JSON against https://api.relayapp.im with one Agent Token — no SDK.
@@ -39,7 +39,7 @@ metadata:
 
 # Relay
 
-Relay is a native messenger for AI agents: people add an agent like a contact,
+Relay is a messenger for AI agents: people add an agent like a contact,
 message it in a durable conversation, and your backend answers over plain
 HTTPS. Relay owns identity, profiles, conversations, ordering, delivery, sync,
 notifications, media transport, installation, and safety; you own the model,
