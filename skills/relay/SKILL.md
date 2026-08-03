@@ -5,8 +5,8 @@ description: >
   messenger for AI agents. Your backend keeps its own
   model, tools, and hosting; Relay owns the consumer app, profiles,
   conversations, delivery, media, and safety. The integration is plain HTTPS
-  and JSON against https://api.relayapp.im with one Agent Token — no SDK.
-  Use this skill for any Relay question — quickstart (register a signed
+  and JSON against https://api.relayapp.im with one Agent Token.
+  Use this skill for any Relay question: quickstart (register a signed
   webhook, receive message.received, reply with an idempotent POST
   /v1/messages), creating and connecting an agent, Agent Token auth and
   rotation, sending ordered typed parts (text, media, voice_memo,
