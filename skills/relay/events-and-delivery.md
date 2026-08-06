@@ -1,22 +1,40 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Delivery model
 
 > How Relay stores messages, delivers events, prevents duplicates, and recovers after failure.
 
-Relay separates canonical conversation state from live presentation. Knowing
-which is which tells you what you can rely on after a failure.
+What survives a restart, and what does not.
 
-| State     | Durable | Examples                                                                       |
-| --------- | :-----: | ------------------------------------------------------------------------------ |
-| Canonical |    ✅    | Final messages, ordered history, webhook events, reactions, receipt watermarks |
-| Live      |    ❌    | Typing indicators, in-flight stream deltas                                     |
+|                    | Stored | Examples                                                                 |
+| ------------------ | :----: | ------------------------------------------------------------------------ |
+| Survives a restart |    ✅   | Messages, ordered history, webhook events, reactions, receipt watermarks |
+| Does not           |    ❌   | Typing indicators, in-flight stream deltas                               |
 
 ## Incoming messages
 
-When a user sends a message, Relay commits it to the conversation before adding
-`message.received` to the agent's durable event log. An agent consumes that log
-through exactly one transport.
+Use webhooks or long polling, not both. Polling with a webhook enabled returns
+`409 conflict`.
+
+```mermaid
+flowchart LR
+  U["User sends"] --> C["Commit to<br/>conversation"]
+  C --> L["Event log<br/>(kept 7 days)"]
+  L --> W["Signed webhook<br/>Relay pushes"]
+  L --> P["Long poll<br/>you pull"]
+  W --> B["Your backend"]
+  P --> B
+  B -- "POST /v1/messages<br/>Idempotency-Key" --> C
+```
 
 | Transport                           | Use it when                                              |
 | ----------------------------------- | -------------------------------------------------------- |
@@ -27,68 +45,61 @@ through exactly one transport.
 >   The two transports are mutually exclusive. Polling while a webhook is enabled
 >   returns `409 conflict`.
 
-### Signed webhooks
-
-**Step 1: Relay writes the event**
-
-The event and one outbox row per matching active endpoint are written in the
-same transaction.
-
-**Step 2: Relay signs and POSTs it**
-
-The exact JSON body is signed and sent to your registered HTTPS URL.
-
-**Step 3: Your backend verifies and deduplicates**
+  
+    **Step 1: Verify and deduplicate**
 
 Verify the signature before parsing, then deduplicate on `event_id`.
 
-**Step 4: Your backend accepts durably**
+**Step 2: Accept, then work**
 
-Enqueue the event and return `2xx` quickly.
+Save the event and return `2xx` within 10 seconds. Do model or tool work after.
 
-Delivery is at least once, so an event may arrive again after a timeout or an
-ambiguous response. A successful `message.received` webhook advances the agent's
-delivered watermark; mark it read separately once your backend has consumed it.
+    A successful `message.received` webhook advances the delivered watermark. Mark it
+    read separately once your backend has consumed it.
 
-### Long polling
+    See [Webhooks](https://docs.relayapp.im/guides/webhooks) for registration, signature verification, and
+    secret rotation.
+  
 
-`GET /v1/events` returns events strictly after the supplied cursor, plus a
-`next_cursor`.
+  
+    `GET /v1/events` returns events strictly after the supplied cursor, plus a
+    `next_cursor`.
 
-```bash
-curl -sS "$RELAY_API_URL/v1/events?cursor=1042&timeout=30" \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
-```
+    ```bash
+    curl -sS "$RELAY_API_URL/v1/events?cursor=1042&timeout=30" \
+      -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+    ```
 
-| Parameter | Behavior                                                                 |
-| --------- | ------------------------------------------------------------------------ |
-| `cursor`  | Returns events strictly after this sequence                              |
-| `timeout` | 0 to 30 seconds. `timeout=0` returns immediately with any pending events |
+    | Parameter | Behavior                                                                 |
+    | --------- | ------------------------------------------------------------------------ |
+    | `cursor`  | Returns events strictly after this sequence                              |
+    | `timeout` | 0 to 30 seconds. `timeout=0` returns immediately with any pending events |
 
-Persist the complete returned page and its `next_cursor` atomically before the
-next request. Supplying that cursor on the next request acknowledges everything
-through it and governs redelivery.
+    Persist the complete returned page and its `next_cursor` atomically before the
+    next request. Supplying that cursor on the next request acknowledges everything
+    through it and governs redelivery.
 
-> **Note:**
->   The sender-visible delivered receipt advances as soon as Relay hands the page to
->   the consumer. The durable acknowledgement remains the redelivery watermark.
+    > **Info:**
+>       Redelivery is governed by the cursor you send next, not by the delivered receipt.
+>
 
-Cursors are scoped to the agent, not the token. Rotating an Agent Token never
-resets the ledger.
+    Cursors are scoped to the agent, not the token. Rotating an Agent Token never
+    resets the ledger.
 
-#### Long-poll errors
+    Long-poll error codes:
 
-| Status | Code                           | What happened                                        | What to do                                                                               |
-| ------ | ------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `422`  | `invalid_request`              | Your cursor is ahead of Relay's delivered ledger     | Resume from `error.details.highest_delivered_cursor` after reconciling history over REST |
-| `409`  | `terminated_by_other_consumer` | A newer poll took over the token                     | Run exactly one consumer per Agent Token                                                 |
-| `409`  | `conflict`                     | A webhook is enabled                                 | Disable the webhook or use it instead                                                    |
-| `410`  | `cursor_expired`               | The cursor is behind the seven-day retention ceiling | Stop and reconcile from history. Do not reset to zero                                    |
+    | Status | Code                           | What happened                                        | What to do                                                                               |
+    | ------ | ------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+    | `422`  | `invalid_request`              | Your cursor is ahead of Relay's delivered ledger     | Resume from `error.details.highest_delivered_cursor` after reconciling history over REST |
+    | `409`  | `terminated_by_other_consumer` | A newer poll took over the token                     | Run one poller per Agent Token; a second poll terminates the first                       |
+    | `409`  | `conflict`                     | A webhook is enabled                                 | Disable the webhook or use it instead                                                    |
+    | `410`  | `cursor_expired`               | The cursor is behind the seven-day retention ceiling | Stop and reconcile from history. Do not reset to zero                                    |
+  
 
 ## Outgoing messages
 
-`POST /v1/messages` commits the message and returns `202 Accepted`. That means
-Relay accepted the canonical write, not that the user has received or read it.
+`POST /v1/messages` returns `202 Accepted`. That means Relay stored the message.
+Delivery and read arrive later as `message.delivered` and `message.read`.
 
 Every send requires an `Idempotency-Key`.
 
@@ -114,9 +125,9 @@ watermarks onto each message.
 
 ## Live state
 
-Typing indicators are pushed to active devices and never enter the durable event
-log. A native UI message stream writes no partial transcript rows; its semantic
-finish commits the authoritative message and sends one notification.
+Typing indicators never appear in `GET /v1/events` or webhooks. A streaming reply
+writes no partial rows: Relay stores one message when the stream finishes, and
+sends one notification.
 
 > **Warning:**
 >   If generation aborts, errors, or disconnects before completion, Relay commits
@@ -124,14 +135,13 @@ finish commits the authoritative message and sends one notification.
 
 ## Recovery rule
 
-Events tell your backend what changed. Conversation history is the source of
-truth for what the thread contains. After any uncertainty, reconcile from
-history rather than reconstructing state from delivery attempts or retry
-responses.
+After any uncertainty, reconcile from [conversation history](https://docs.relayapp.im/guides/conversation-history).
+Do not rebuild state from delivery attempts or retry responses.
 
 ## Next steps
 
 * [Webhooks](https://docs.relayapp.im/guides/webhooks) for registration, verification, and rotation
+* [Embed Relay in your own runtime](https://docs.relayapp.im/integrations/channel-plugin) if you maintain an agent host runtime
 * [Event types](https://docs.relayapp.im/reference/events) for every payload shape
 * [Read receipts](https://docs.relayapp.im/guides/read-receipts) for the action and lifecycle
 * [Conversation history](https://docs.relayapp.im/guides/conversation-history) for reconciliation
@@ -140,12 +150,20 @@ responses.
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Webhooks
 
 > Register an HTTPS receiver, verify signatures, and process at-least-once delivery safely.
 
-Relay sends each agent event to its registered HTTPS endpoints. The event is
-committed to Relay's durable log and transactional outbox before delivery begins.
+Relay sends each agent event to its registered HTTPS endpoints.
 
 ## Register an endpoint
 
@@ -159,13 +177,14 @@ curl -sS -X POST "https://api.relayapp.im/v1/webhooks" \
   }'
 ```
 
-Production endpoints must use public HTTPS URLs. Relay returns a `whsec_...`
-signing secret only when the endpoint is created or its secret is rotated. Store
-it in a secret manager. An agent may register up to five endpoints.
+Production endpoints must use public HTTPS URLs. An agent may have up to five
+enabled endpoints; disabled ones do not count.
+
+Relay returns a `whsec_...` signing secret only when the endpoint is created or
+its secret is rotated. Store it in a secret manager.
 
 When an endpoint is first registered, Relay queues matching events from the
-preceding 24 hours, capped at 1,000. This closes the setup gap between creating
-an agent and connecting its backend.
+preceding 24 hours, capped at 1,000.
 
 ## Verify every request
 
@@ -189,7 +208,7 @@ signatures in constant time and reject timestamps more than five minutes from th
 current time. Verify the raw bytes before JSON parsing; reserializing JSON changes
 the signature.
 
-The official Standard Webhooks libraries implement this contract. In JavaScript:
+In JavaScript:
 
 ```bash
 npm install standardwebhooks
@@ -206,48 +225,53 @@ const event = new Webhook(env.RELAY_WEBHOOK_SECRET).verify(rawBody, {
 });
 ```
 
-> **Note:**
->   On Cloudflare Agents, verify in `onRequest()`, enqueue the event with the Agent
->   SDK's durable `this.queue()`, and return `202` before model or tool work. The
->   Agent queue persists in that Durable Object and serializes rapid webhook arrivals.
+On Cloudflare Agents: verify in `onRequest()`, enqueue with the Agent SDK's
+`this.queue()`, and return `202` before model or tool work.
 
 ## Acknowledge and deduplicate
 
-Return any `2xx` after the event is durably accepted by your backend. Requests
-time out after 10 seconds. Relay retries timeouts, connection errors, `408`,
-`429`, and `5xx` responses with exponential backoff and jitter for up to 10
-attempts. Every other response, including redirects and other `4xx`, is a
-permanent failure: the delivery dead-letters immediately with no retry.
+Return any `2xx` once your backend has stored the event. Requests time out after
+10 seconds.
 
-Delivery is at least once. Store `event_id` as a unique key before producing side
-effects. Derive outbound message idempotency keys from it, for example
-`reply:<event_id>`.
+Relay retries timeouts, connection errors, `408`, `429`, and `5xx` responses with
+exponential backoff and jitter for up to 10 attempts. Every other response,
+including redirects and other `4xx`, is a permanent failure: the delivery
+dead-letters immediately with no retry.
+
+Store `event_id` as a unique key before producing side effects. Derive outbound
+message idempotency keys from it, for example `reply:<event_id>`.
 
 A successful `message.received` delivery advances the agent's delivered watermark.
 Mark the message read only after your backend consumes it.
 
 ## Manage endpoints
 
-```bash
-# List. Signing secrets are never returned.
-curl -sS "https://api.relayapp.im/v1/webhooks" \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+  ```bash List
+  # Signing secrets are never returned.
+  curl -sS "https://api.relayapp.im/v1/webhooks" \
+    -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+  ```
 
-# Change URL, event filters, or enabled state.
-curl -sS -X PATCH "https://api.relayapp.im/v1/webhooks/wh_..." \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled":false}'
+  ```bash Update
+  # Change URL, event filters, or enabled state.
+  curl -sS -X PATCH "https://api.relayapp.im/v1/webhooks/wh_..." \
+    -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"enabled":false}'
+  ```
 
-# Rotate. The new signing secret is returned once; Relay signs with both the
-# new and previous secret for 24 hours.
-curl -sS -X POST "https://api.relayapp.im/v1/webhooks/wh_.../rotate-secret" \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+  ```bash Rotate secret
+  # The new signing secret is returned once. Relay signs with both the new and
+  # previous secret for 24 hours.
+  curl -sS -X POST "https://api.relayapp.im/v1/webhooks/wh_.../rotate-secret" \
+    -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+  ```
 
-# Delete permanently.
-curl -sS -X DELETE "https://api.relayapp.im/v1/webhooks/wh_..." \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
-```
+  ```bash Delete
+  # Permanent.
+  curl -sS -X DELETE "https://api.relayapp.im/v1/webhooks/wh_..." \
+    -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+  ```
 
 These are the filters you can subscribe to today:
 
@@ -260,31 +284,37 @@ These are the filters you can subscribe to today:
 | `message.read`                                                         | A recipient read through a sequence                  |
 | `reaction.added` / `reaction.removed`                                  | A participant reacted to your message                |
 | `conversation.added` / `conversation.updated` / `conversation.removed` | Group membership or metadata changed                 |
+| `group.invite.joined` / `group.invite.declined`                        | One invited person answered a group invite           |
 | `group.invite.completed` / `group.invite.expired`                      | A group invite reached its terminal state            |
 
-There is no component-specific side channel: ordinary component taps arrive as
-`message.received` events. Group invite consent uses the invite endpoint and
-reports only its completed or expired terminal state.
+Group invite consent uses the invite endpoint and reports each individual
+answer plus the terminal state.
 
 > **Warning:**
->   Ignore unknown event types. Relay adds them additively, and a receiver that
->   throws on an unrecognized type breaks on the next protocol change.
-
-See [Event types](https://docs.relayapp.im/reference/events) for payloads and [Delivery model](https://docs.relayapp.im/guides/delivery-model)
-for the durable-state boundary.
+>   Ignore unknown event types.
 
 ## Next steps
 
 * [Event types](https://docs.relayapp.im/reference/events)
 * [Delivery model, including long polling](https://docs.relayapp.im/guides/delivery-model)
+* [Embed Relay in your own runtime](https://docs.relayapp.im/integrations/channel-plugin) if your runtime owns many agents
 * [Errors](https://docs.relayapp.im/reference/errors)
 
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Event types
 
-> Event envelopes and payloads emitted by Relay.
+> Handle every event envelope and payload Relay emits.
 
 Every event uses the same envelope:
 
@@ -317,16 +347,13 @@ human explicitly invoked the agent in a group.
 
 The agent's own messages never echo back as `message.received`.
 
-A [message component](https://docs.relayapp.im/components) tap is one of these ordinary messages. Its
-data part carries the selected `option_id`, visible `label`, and either a
-synthesized `origin.kind: "data_action"` object or the option's original origin.
-
 ### `message.edited`
 
 The original sender replaced a text-bearing message within its 15-minute edit
-window. `data.message` is the full updated canonical message. `edited_at` marks
-the latest edit, and `revisions` contains each prior `parts` and
-`fallback_text` snapshot from oldest to newest. `data.revision_count` is the
+window. `data.message` is the full updated message.
+
+`edited_at` marks the latest edit, and `revisions` contains each prior `parts`
+and `fallback_text` snapshot from oldest to newest. `data.revision_count` is the
 number of stored revisions, from 1 through 5.
 
 ```json
@@ -434,27 +461,19 @@ A participant added or removed a reaction from the agent's message.
 
 ### `conversation.added`, `conversation.updated`, and `conversation.removed`
 
-Relay emits these when a human group member adds or removes the authenticated
-agent. Membership alone does not disclose ambient messages. Group history is
-limited to messages explicitly delivered through that agent's invocations and
-its corresponding replies. Removed agents receive no future group events, and
-pending invocation IDs from an ended membership period cannot be reused after
-re-addition.
+Relay emits these to every active group agent when a human adds or removes the
+authenticated agent, renames the group, or changes its avatar. A removed agent
+receives no further group events, and pending invocation IDs from an ended
+membership period cannot be reused after re-addition.
 
-Relay emits `conversation.updated` to every active group agent when a human
-renames the group or changes its avatar.
+An agent's group history stays limited to the messages that invoked it and its
+own replies. No lifecycle event adds access to the rest of the conversation.
 
-The payload carries the human `actor`, the current `membership_version`, a
-structured old and new `system_mutation`, and the canonical system `message`. It
-omits `affected_participant`, because metadata updates do not target one member.
-
-> **Warning:**
->   No lifecycle event grants ambient transcript access.
-
-Lifecycle `data` is typed and self-contained: `conversation_id`, the human
-`actor`, the affected participant when the mutation targets one, the current `membership_version`, the
-structured `system_mutation` with old/new fields, and the same canonical
-system `message` stored in the conversation.
+`data` carries `conversation_id`, the human `actor`, the affected participant
+when the mutation targets one, the current `membership_version`, the
+`system_mutation` with old and new fields, and the system `message` stored in
+the conversation. A `conversation.updated` payload omits `affected_participant`,
+because metadata updates do not target one member.
 
   ```json Membership change
   {
@@ -548,16 +567,34 @@ system `message` stored in the conversation.
 Both variants carry the mutation twice on the system message: once as a
 human-readable text part and once as a structured `data` part.
 
-People manage group membership and metadata from the Relay app. A backend
-receives the lifecycle events above but cannot create a group or change its
-membership; see [API availability](https://docs.relayapp.im/roadmap).
+A backend receives these lifecycle events but cannot create a group or change
+its membership; see [API availability](https://docs.relayapp.im/roadmap).
+
+### `group.invite.joined` / `group.invite.declined`
+
+`group.invite.joined` fires on every accept and carries `invite_id`, the
+`conversation_id` that person is now in, and their `user_id`. The first accept
+creates that conversation, and later accepts join it.
+
+`group.invite.declined` carries `invite_id` and `user_id`.
+
+```json
+{
+  "event_type": "group.invite.joined",
+  "data": {
+    "invite_id": "inv_01K1M8FOUNDERSDINNER",
+    "conversation_id": "cnv_01K1M8NEWGROUP",
+    "user_id": "usr_01K1M8ALICE"
+  }
+}
+```
 
 ### `group.invite.completed` / `group.invite.expired`
 
-An agent-created group invite reaches one terminal state after every invited
-user accepts or after its deadline passes. Completed payloads contain
-`invite_id` and the resulting `conversation_id`. Expired payloads contain only
-`invite_id`.
+An invite reaches its terminal state once every invited user answers or its
+deadline passes. It completes when a conversation went live, with `invite_id`
+and that `conversation_id`, and expires when nobody joined, with `invite_id`
+alone.
 
 ```json
 {
@@ -569,18 +606,18 @@ user accepts or after its deadline passes. Completed payloads contain
 }
 ```
 
-There is no decline event. A user who does not accept leaves the invite
-pending until expiry.
+A decline closes that person's card alone. It leaves the conversation and the
+rest of the invite untouched.
 
-Group mutations are an off-by-default preview. Existing canonical group
-history remains readable if availability is turned off; the gate prevents new
-membership and metadata writes.
+Group mutations are an off-by-default preview. Existing group history remains
+readable if availability is turned off; the gate prevents new membership and
+metadata writes.
 
 ## Specified, coming soon
 
-The Relay contract also defines `message.failed`, durable typing events,
-`attachment.available`, install events, and the `call.*` family. These are
-**not emitted by v0**. See [API availability](https://docs.relayapp.im/roadmap).
+The Relay contract also defines `message.failed`, typing events that enter the
+event log, `attachment.available`, install events, and the `call.*` family.
+These are **not emitted by v0**. See [API availability](https://docs.relayapp.im/roadmap).
 
 ## See also
 
@@ -590,6 +627,15 @@ The Relay contract also defines `message.failed`, durable typing events,
 
 
 ---
+
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
 
 # Read receipts
 
@@ -605,9 +651,6 @@ curl -sS -X POST "https://api.relayapp.im/v1/conversations/cnv_01JZC7K4RQ/read" 
 ```
 
 ## Receipt watermarks
-
-Receipts are monotonic conversation watermarks, not independent flags on each
-message.
 
 | Rule                                                 | Behavior                                           |
 | ---------------------------------------------------- | -------------------------------------------------- |
@@ -638,20 +681,27 @@ Conversation history projects the watermark onto each outbound message as
 
 ## Next steps
 
-* [Event types](https://docs.relayapp.im/reference/events) for the canonical receipt payloads
+* [Event types](https://docs.relayapp.im/reference/events) for the receipt payloads
 * [Webhooks](https://docs.relayapp.im/guides/webhooks) for signature and redelivery behavior
 * [Delivery model](https://docs.relayapp.im/guides/delivery-model) for the full watermark lifecycle
 
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Conversation history
 
 > Read a conversation's messages for context with cursor pagination.
 
 Read conversation history after a restart, on a cold start, or when rebuilding a prompt window.
-
-Relay creates or reuses the direct thread when a user installs the agent. See [Conversation lifecycle](https://docs.relayapp.im/guides/conversation-lifecycle) for membership, removal, and reinstall behavior.
 
 ```bash
 curl -sS "https://api.relayapp.im/v1/conversations/cnv_01JZC7K4RQ/messages?limit=50" \
@@ -690,8 +740,8 @@ reactions, revision history, and a receipt-projected `status` (`sent`,
 ```
 
 `revisions` is ordered from oldest to newest and is empty for a message that
-has never been edited. Each entry preserves the prior canonical parts and
-fallback text. `edited_at` is present after the first edit.
+has never been edited. Each entry preserves the prior parts and fallback text.
+`edited_at` is present after the first edit.
 
 An unsent message keeps its place in sequence order but projects as a bare
 tombstone:
@@ -721,8 +771,6 @@ An empty `messages` array means you have reached the start of the conversation.
 
 ## Notes
 
-Message `status` includes the delivery and read watermark projected for the message's recipients. See [Read receipts](https://docs.relayapp.im/guides/read-receipts) for the lifecycle.
-
 * History is available while the agent participates in the conversation (`403 forbidden` otherwise).
 * `sequence` orders messages *within one conversation*. It is unrelated to a webhook `event_id`.
 * History is the recovery path after an event gap or uncertain delivery.
@@ -736,12 +784,20 @@ Message `status` includes the delivery and read watermark projected for the mess
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Identifying users
 
 > Turn a message's sender.id into the human's name and phone number.
 
-Every inbound event already tells you *which* user it came from. A
-`message.received` event carries the sender under `data.message.sender`:
+A `message.received` event carries the sender under `data.message.sender`:
 
 ```json
 "sender": { "kind": "user", "id": "usr_01JZU1F0BD" }
@@ -752,8 +808,7 @@ chats and in groups. Use it to key your own records.
 
 ## Resolve the name and phone
 
-To turn the id into something you can greet or match on, call
-`GET /v1/users/{user_id}` (see the **API Reference** tab):
+Call `GET /v1/users/{user_id}` (see the **API Reference** tab):
 
 ```bash
 curl https://api.relayapp.im/v1/users/usr_01JZU1F0BD \
@@ -774,12 +829,12 @@ curl https://api.relayapp.im/v1/users/usr_01JZU1F0BD \
 }
 ```
 
-`name` is the canonical stored value. `first_name` and `last_name` are a
+`name` is the stored value. `first_name` and `last_name` are a
 convenience split of `name` on the first space, so a two-word given name puts
 its tail in `last_name`. Greet with them, but store `name` if you need the
 exact value.
 
-> **Note:**
+> **Tip:**
 >   In a group, read `sender.id` from each `message.received` to tell participants
 >   apart: three users in a thread are three distinct `usr_…` ids.
 

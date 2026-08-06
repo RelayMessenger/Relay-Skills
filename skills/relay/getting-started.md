@@ -1,18 +1,72 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Quickstart
 
-> Register a webhook, receive a message, and send a reply with plain HTTPS.
+> From Agent Token to a reply in the user's thread, in minutes.
 
-Create an agent in Relay and save the Agent Token shown once. Relay sends events
-to your HTTPS endpoint; your backend sends messages back through the REST API.
+Create an agent in Relay and save the Agent Token shown once.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as Relay
+    participant B as Your backend
+    B->>R: POST /v1/webhooks
+    R-->>B: signing secret (once)
+    U->>R: "What time works tomorrow?"
+    R->>B: message.received (signed)
+    B-->>R: 202 Accepted
+    B->>R: POST /v1/messages (Idempotency-Key)
+    R->>U: "Tomorrow at 2:00 PM works."
+```
+
+Set these once.
 
 ```bash
 export RELAY_API_URL="https://api.relayapp.im"
 export RELAY_AGENT_TOKEN="rly_live_..."
 ```
 
-**Step 1: Register your webhook**
+**Step 1: Hand this page to your coding agent (optional)**
+
+Paste this into Claude Code, Codex, or Cursor. The agent carries out every
+step below; the Agent Token is the only thing it needs from you.
+
+```markdown Copy this prompt into your coding agent
+Connect my existing agent backend to Relay (https://docs.relayapp.im).
+
+1. Fetch https://docs.relayapp.im/ai.md and follow its integration brief.
+   The API is plain HTTPS at https://api.relayapp.im with one Agent Token.
+   There is no SDK; do not import a relay package.
+2. Ask me for my Agent Token (I create the agent in the Relay app; the
+   rly_live_… token is shown once). Put it in RELAY_AGENT_TOKEN. Never
+   print or commit it.
+3. Add my public HTTPS webhook endpoint to my existing server, register it
+   with POST /v1/webhooks, store the signing_secret I get back, and verify
+   Standard Webhooks signatures over the exact raw body.
+4. On message.received, reply with POST /v1/messages using an
+   Idempotency-Key derived from the event_id.
+5. Verify end to end with GET /v1/agents/me, then send me a test checklist.
+
+For live docs search while you work, add the MCP server:
+claude mcp add --transport http relay-docs https://docs.relayapp.im/mcp
+```
+
+> **Info:**
+>   **Working by hand?** Continue below; the steps are identical. Any LLM can
+>   also ingest [`llms-full.txt`](https://docs.relayapp.im/llms-full.txt), which
+>   bundles every page as one Markdown file.
+
+**Step 2: Register your webhook**
 
 ```bash
 curl -sS -X POST "$RELAY_API_URL/v1/webhooks" \
@@ -28,7 +82,7 @@ Relay returns the signing secret exactly once:
   "webhook": {
     "id": "wh_01JZWEBHOOK",
     "url": "https://agent.example/webhooks/relay",
-    "events": ["message.received", "message.edited", "message.unsent", "conversation.added", "conversation.updated", "conversation.removed", "reaction.added", "reaction.removed", "message.delivered", "message.read", "group.invite.completed", "group.invite.expired"],
+    "events": ["message.received", "message.edited", "message.unsent", "…"],
     "enabled": true,
     "secret_prefix": "whsec_MfKQ9r8G…",
     "created_at": "2026-07-15T20:00:00.000Z",
@@ -38,14 +92,14 @@ Relay returns the signing secret exactly once:
 }
 ```
 
-Store the secret in your secret manager. It is not returned by list or update requests.
+It is not returned by list or update requests.
 
-**Step 2: Receive and verify the signed event**
+**Step 3: Receive and verify the signed event**
 
 Relay sends the event envelope as the raw JSON request body with
 `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers. Verify
 the signature before parsing the body, reject timestamps older than five
-minutes, durably enqueue the event, and return a `2xx` quickly.
+minutes, store the event, and return a `2xx` quickly.
 
 ```json
 {
@@ -71,7 +125,7 @@ minutes, durably enqueue the event, and return a `2xx` quickly.
 
 Delivery is at least once. Deduplicate with `event_id`.
 
-**Step 3: Reply**
+**Step 4: Reply**
 
 Derive the `Idempotency-Key` from the incoming `event_id` so retries cannot
 create a second reply.
@@ -88,10 +142,116 @@ curl -sS -X POST "$RELAY_API_URL/v1/messages" \
   }'
 ```
 
-Relay returns `202 Accepted` with the canonical message.
+Relay returns `202 Accepted` with the stored message.
 
-Next, read [Webhooks](https://docs.relayapp.im/guides/webhooks) for verification, retries, rotation, and
-event filtering. Then connect the same handler your existing channels already use.
+**Step 5: Run the complete handler**
+
+Steps 2 through 4 as one file: verify, store, reply.
+
+  ```typescript server.ts
+  import { createServer } from "node:http";
+  import { Webhook } from "standardwebhooks";
+
+  const wh = new Webhook(process.env.RELAY_SIGNING_SECRET!);
+  const TOKEN = process.env.RELAY_AGENT_TOKEN!;
+  const seen = new Set<string>();
+
+  createServer(async (req, res) => {
+    const body = await new Promise<string>((ok) => {
+      let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => ok(b));
+    });
+    let event: any;
+    try {
+      event = wh.verify(body, req.headers as Record<string, string>);
+    } catch {
+      res.writeHead(401).end("signature rejected"); return;
+    }
+    res.writeHead(202).end(); // ack first, work after
+
+    if (event.event_type !== "message.received") return;
+    if (seen.has(event.event_id)) return; // at-least-once delivery
+    seen.add(event.event_id);
+
+    await fetch("https://api.relayapp.im/v1/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": `reply-${event.event_id}`,
+      },
+      body: JSON.stringify({
+        conversation_id: event.data.message.conversation_id,
+        parts: [{ type: "text", text: "Tomorrow at 2:00 PM works." }],
+      }),
+    });
+  }).listen(8787);
+  ```
+
+  ```python server.py
+  import json, os, urllib.request
+  from http.server import BaseHTTPRequestHandler, HTTPServer
+  from standardwebhooks import Webhook
+
+  wh = Webhook(os.environ["RELAY_SIGNING_SECRET"])
+  TOKEN = os.environ["RELAY_AGENT_TOKEN"]
+  seen = set()
+
+  class Handler(BaseHTTPRequestHandler):
+      def do_POST(self):
+          body = self.rfile.read(int(self.headers["Content-Length"]))
+          try:
+              event = wh.verify(body, dict(self.headers))
+          except Exception:
+              self.send_response(401); self.end_headers(); return
+          self.send_response(202); self.end_headers()  # ack first
+
+          if event["event_type"] != "message.received": return
+          if event["event_id"] in seen: return  # at-least-once delivery
+          seen.add(event["event_id"])
+
+          req = urllib.request.Request(
+              "https://api.relayapp.im/v1/messages",
+              data=json.dumps({
+                  "conversation_id": event["data"]["message"]["conversation_id"],
+                  "parts": [{"type": "text", "text": "Tomorrow at 2:00 PM works."}],
+              }).encode(),
+              headers={
+                  "Authorization": f"Bearer {TOKEN}",
+                  "Content-Type": "application/json",
+                  "Idempotency-Key": f"reply-{event['event_id']}",
+              },
+          )
+          urllib.request.urlopen(req)
+
+  HTTPServer(("", 8787), Handler).serve_forever()
+  ```
+
+Send your agent a message from the Relay app. The reply lands in the thread.
+
+**Step 6: Ask your agent to audit the result (optional)**
+
+```markdown Copy this prompt
+Review my Relay integration against https://docs.relayapp.im/quickstart.md
+and https://docs.relayapp.im/guides/webhooks.md. Check that I verify the
+webhook-signature over the exact raw body, reject stale timestamps, return
+2xx within 10 seconds before doing model work, deduplicate on event_id, and
+derive Idempotency-Key from event_id on every reply. Report anything that
+does not match, with the file and line.
+```
+
+<Check>
+  The reply is in the user's thread.
+</Check>
+
+## If it fails
+
+| Symptom                         | Cause and fix                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `signature rejected` (401)      | The body was parsed or re-serialized before verification. Verify over the exact raw bytes                    |
+| `401 unauthorized` from the API | Wrong or rotated Agent Token. Update `RELAY_AGENT_TOKEN` and retry                                           |
+| No webhook arrives              | The URL must be public HTTPS. Check the registration response and your tunnel                                |
+| Duplicate replies               | You replied before deduplicating. Check `event_id` before side effects, and derive `Idempotency-Key` from it |
+| `409 idempotency_conflict`      | Same key, different body. Reuse the key only for the identical reply                                         |
 
 ## Next steps
 
@@ -103,12 +263,18 @@ event filtering. Then connect the same handler your existing channels already us
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Create and connect an agent
 
-> Create an agent in Relay, connect its backend, and understand installation.
-
-A Relay agent is the identity people add and message. Your backend supplies its
-brain; Relay owns its profile, installation, conversation, and delivery.
+> Create an agent in Relay, connect its backend, and control who can install it.
 
 ## Create the agent
 
@@ -121,18 +287,16 @@ handle. Those are the only creation fields.
 | Reserved handles    | Product and legal route names such as `dashboard`, `mac`, `privacy`, `support`, `terms` |
 | Starting visibility | Private, until the owner changes it                                                     |
 | On creation         | Relay installs the agent for its creator and opens its direct conversation              |
-| Agent Token         | Shown exactly once                                                                      |
+| Agent Token         | Displayed once at creation and never shown again                                        |
 
-> **Note:**
+> **Info:**
 >   Creation never asks for a tagline, accent color, model, personality, prompt,
->   backend URL, or hosting provider. Behavior and backend configuration live in
->   your external backend, not in Relay's identity contract.
+>   backend URL, or hosting provider.
 
 ### Richer creation through the API
 
-The app keeps creation to display name and handle on purpose. An authenticated
-owner can set richer presentation fields in the same request with
-`POST /v1/me/agents`.
+An authenticated owner can set richer presentation fields in the same request
+with `POST /v1/me/agents`.
 
 | Field                                 | Accepts                                                 |
 | ------------------------------------- | ------------------------------------------------------- |
@@ -153,8 +317,8 @@ opening message for future installs.
 > **Warning:**
 >   These endpoints use the owner's Relay session, not the Agent Token.
 
-An opening message is sent as the agent exactly once, when a user first installs
-it. Reinstalling, changing visibility, or changing distribution policy never
+An opening message is sent as the agent when a user first installs it, and only
+then. Reinstalling, changing visibility, or changing distribution policy never
 sends it again, and updating it affects future first installs only.
 
 ## Connect the backend
@@ -213,8 +377,8 @@ Relay accepts a backend message only while both of these hold:
 | Built-in **Relay** agent | Required, with no ordinary Remove action                                          |
 
 > **Note:**
->   The developer API continues from conversation IDs Relay delivers to the agent.
->   Conversation creation and arbitrary user lookup are not part of the preview.
+>   Conversation creation and arbitrary user lookup are not part of the preview. The
+>   developer API continues from conversation IDs Relay delivers to the agent.
 
 ## Next steps
 
@@ -226,29 +390,34 @@ Relay accepts a backend message only while both of these hold:
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Authentication
 
 > Authenticate requests, verify identity, and rotate credentials.
 
-Set `RELAY_AGENT_TOKEN` in your server environment. Requests authenticate as the Relay agent that issued the token.
+Set `RELAY_AGENT_TOKEN` in your server environment.
 
 ```bash
 curl -sS "https://api.relayapp.im/v1/agents/me" \
   -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
 ```
 
-`GET /v1/agents/me` verifies the credential and returns the agent's `id`, `handle`, and profile. Relay shows the `rly_live_…` token once when the agent is created.
+`GET /v1/agents/me` verifies the token and returns the agent's `id`, `handle`, and profile. Relay shows the `rly_live_…` token once, when the agent is created.
 
 ## Store and rotate
 
-* Keep it in a secret manager or environment variable. Relay stores only a hash.
+* Keep it in a secret manager or environment variable.
 * Keep it out of source code, logs, and URLs.
-* A `401 unauthorized` response means the credential needs attention. Update it before retrying.
-* If a token is exposed, rotate it from the agent profile and update the deployment. Rotation revokes the previous token immediately.
-
-An Agent Token authenticates external code as one agent. It is not a Relay user session or a hosted runtime.
-
-See [Your agent](https://docs.relayapp.im/guides/your-agent) for the identity, installation, and conversation boundaries behind the credential.
+* On `401 unauthorized`, update the token before retrying.
+* If a token leaks, rotate it from the agent profile and redeploy. Rotation revokes the previous token immediately.
 
 ## Next steps
 

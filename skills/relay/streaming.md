@@ -1,15 +1,21 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Streaming replies
 
 > Pipe an existing Vercel AI SDK UI message stream into Relay in one request.
 
-Relay accepts the output your agent already produces. Send one request with
-`stream=true` and pipe a Vercel AI SDK `UIMessageStream v1` into its body.
-Relay consumes the whole stream and commits one canonical message when it
-finishes.
-
-There is no Relay draft to open, append, edit, or clean up.
+Send one request with `stream=true` and pipe a Vercel AI SDK `UIMessageStream v1`
+into its body. Relay consumes the whole stream and commits one stored message
+when it finishes.
 
 ## Pipe an AI SDK response
 
@@ -37,9 +43,6 @@ const relayResponse = await fetch(
 
 if (!relayResponse.ok) throw new Error(await relayResponse.text());
 ```
-
-This is a direct HTTPS integration, not a Relay SDK. Your backend still owns
-the model, tool loop, prompts, memory, and hosting.
 
 ## Wire request
 
@@ -74,20 +77,17 @@ data: [DONE]
 
 ```
 
-Relay returns the normal `202` message response after the canonical commit.
+Relay returns the normal `202` message response once the message is committed.
 
 ## What Relay preserves
 
 | AI SDK part                         | Relay presentation                                          |
 | ----------------------------------- | ----------------------------------------------------------- |
-| Text parts                          | Canonical `text` parts                                      |
+| Text parts                          | `text` parts                                                |
 | Tool input and output               | A transcript `tool_call` data part; Relay never executes it |
 | URL sources                         | `link_preview` parts                                        |
 | Files and document sources          | Transcript artifact parts when they have usable metadata    |
 | Reasoning and transient custom data | Remain private to the agent backend                         |
-
-The external agent owns the full loop. Relay is the messaging channel and
-presentation surface.
 
 ## Completion and recovery
 
@@ -95,8 +95,7 @@ presentation surface.
   not commit a message by itself.
 * `abort`, `error`, malformed ordering, or an early disconnect writes no
   transcript row.
-* A successful stream produces one durable `message.created` event and one
-  notification.
+* A successful stream stores one message and sends one notification.
 * Retry the whole request with the same `Idempotency-Key`. The same completed
   stream returns the original message; different content returns
   `409 idempotency_conflict`.
@@ -115,6 +114,15 @@ stream begins when the agent has a long planning or tool phase.
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Typing indicators
 
 > Show live typing state while your backend prepares a reply.
@@ -128,7 +136,7 @@ curl -sS -X POST "https://api.relayapp.im/v1/conversations/cnv_01JZC7K4RQ/typing
   -d '{ "started": true }'
 ```
 
-Relay returns `204 No Content`. The signal is ephemeral: it is pushed to active devices and never enters the durable event log. The agent must be a participant in the conversation.
+Relay returns `204 No Content`. The signal is ephemeral: it is pushed to active devices and never enters the event log, so no webhook or long poll replays it. The agent must be a participant in the conversation.
 
 Add a short status line with `label`:
 
@@ -149,10 +157,10 @@ curl -sS -X POST "https://api.relayapp.im/v1/conversations/cnv_01JZC7K4RQ/typing
   -d '{ "started": false }'
 ```
 
-Sending a message clears the visible indicator. When a reply may stop before sending, put the stop request in cleanup logic so the conversation returns to its resting state.
+Sending a message clears the visible indicator. If a reply may abort before sending, put the stop request in cleanup logic.
 
 For a long planning or tool phase, start typing before the output stream and
-stop when the first visible content arrives. See [Streaming replies](https://docs.relayapp.im/guides/streaming).
+stop when the first visible content arrives.
 
 ## Next steps
 

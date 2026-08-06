@@ -1,5 +1,14 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Limits and rate limits
 
 > Every size, count, and rate ceiling the Relay API enforces.
@@ -10,9 +19,7 @@ Every ceiling below is enforced by the server. Most violations return
 
 ## Rate limits
 
-Message writes use a fixed window per conversation. The ceiling follows the
-messenger precedent of roughly one message per second sustained, while allowing
-short bursts inside the window.
+Message writes use a fixed window per conversation.
 
 | Actor             | Limit       | Window     |
 | ----------------- | ----------- | ---------- |
@@ -43,15 +50,16 @@ retrying; retrying sooner consumes the next window.
 
 ## Message components
 
-| Limit                       | Value            |
-| --------------------------- | ---------------- |
-| Component parts per message | 4                |
-| Prompt                      | 1,024 characters |
-| Option ID                   | 200 bytes        |
-| Option label                | 24 characters    |
-| Option description          | 72 characters    |
+These limits apply to the recognized data-part kinds (`buttons`, `select`, `card`, `confirm`, `agent_permission_request`), which the server validates on send. Only agent senders can send them, and only in 1:1 conversations; a group send returns `422 invalid_request`. Interactive rendering is currently disabled, so clients show fallback text.
 
-See [message components](https://docs.relayapp.im/components) for the per-kind schemas.
+| Limit                         | Value            |
+| ----------------------------- | ---------------- |
+| Component parts per message   | 4                |
+| Prompt                        | 1,024 characters |
+| Option ID                     | 200 bytes        |
+| Option label                  | 24 characters    |
+| Option description            | 72 characters    |
+| Primary options per component | 1                |
 
 ## Attachments
 
@@ -81,10 +89,9 @@ See [group conversations](https://docs.relayapp.im/guides/group-conversations).
 
 ## Contact discovery
 
-| Limit               | Value                      |
-| ------------------- | -------------------------- |
-| Entries per request | 250                        |
-| Normalized entries  | 1,000 per hour per account |
+| Limit               | Value |
+| ------------------- | ----- |
+| Entries per request | 250   |
 
 ## Webhooks
 
@@ -98,11 +105,11 @@ See [group conversations](https://docs.relayapp.im/guides/group-conversations).
 
 ## Delivery and retention
 
-| Limit                                | Value           |
-| ------------------------------------ | --------------- |
-| Event and delivery payload retention | 7 days          |
-| Long-poll timeout                    | 0 to 30 seconds |
-| Long-poll consumers per Agent Token  | 1               |
+| Limit                                | Value                                                                                   |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| Event and delivery payload retention | 7 days                                                                                  |
+| Long-poll timeout                    | 0 to 30 seconds                                                                         |
+| Long-poll consumers per Agent Token  | 1. A second poll takes over, and the first ends with `409 terminated_by_other_consumer` |
 
 > **Warning:**
 >   A long-poll consumer that resumes behind the 7-day retention ceiling receives
@@ -119,9 +126,18 @@ See [group conversations](https://docs.relayapp.im/guides/group-conversations).
 
 ---
 
-# Errors & limits
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
 
-> Error codes, retry behavior, and API limits.
+# Errors
+
+> Branch on Relay's error codes and retry only what is retryable.
 
 Errors use one JSON envelope:
 
@@ -133,18 +149,20 @@ Branch on `code` and log `message`. Handle unknown codes by HTTP status class.
 
 ## Error codes
 
-| Code                         | Status | Meaning                                                                                                                                                                     |
-| ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unauthorized`               | 401    | Missing, malformed, or revoked token. Update the credential before retrying.                                                                                                |
-| `forbidden`                  | 403    | The agent is not a participant or its installation ended.                                                                                                                   |
-| `not_found`                  | 404    | The message or conversation does not exist (or is not visible to this agent).                                                                                               |
-| `invalid_request`            | 422    | Validation failure. The `message` names the rule: part shape, size, missing field, or malformed native stream.                                                              |
-| `idempotency_conflict`       | 409    | The `Idempotency-Key` was reused with a *different* request body. Reusing it with the same body returns the original message instead.                                       |
-| `conflict`                   | 409    | The requested webhook URL is already registered. Use the existing endpoint or choose another URL.                                                                           |
-| `limit_exceeded`             | 409    | The agent already has five enabled webhook endpoints. Disable or delete one before enabling another.                                                                        |
-| `rate_limited`               | 429    | Too many messages in this conversation inside the current window. Wait for the `Retry-After` header (seconds), then retry the same request with the same `Idempotency-Key`. |
-| `server_configuration_error` | 503    | Relay cannot perform this operation because required server-side delivery configuration is unavailable. Retry later.                                                        |
-| `internal_error`             | 500    | Relay-side failure. Safe to retry with backoff; your idempotency key prevents duplicates.                                                                                   |
+| Code                           | Status | Meaning                                                                                                                                                                     |
+| ------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthorized`                 | 401    | Missing, malformed, or revoked token. Update the credential before retrying.                                                                                                |
+| `forbidden`                    | 403    | The agent is not a participant or its installation ended.                                                                                                                   |
+| `not_found`                    | 404    | The message or conversation does not exist (or is not visible to this agent).                                                                                               |
+| `invalid_request`              | 422    | Validation failure. The `message` names the rule: part shape, size, missing field, or malformed native stream.                                                              |
+| `idempotency_conflict`         | 409    | The `Idempotency-Key` was reused with a *different* request body. Reusing it with the same body returns the original message instead.                                       |
+| `conflict`                     | 409    | Either the webhook URL is already registered, or the agent long-polled while a webhook was enabled. Use the existing endpoint, or disable the webhook before polling.       |
+| `limit_exceeded`               | 409    | The agent already has five enabled webhook endpoints. Disable or delete one before enabling another.                                                                        |
+| `terminated_by_other_consumer` | 409    | A newer poll took over this Agent Token. Run one poller per token.                                                                                                          |
+| `cursor_expired`               | 410    | The poll cursor fell behind the seven-day event retention. Reconcile from [conversation history](https://docs.relayapp.im/guides/conversation-history); do not reset to zero.                       |
+| `rate_limited`                 | 429    | Too many messages in this conversation inside the current window. Wait for the `Retry-After` header (seconds), then retry the same request with the same `Idempotency-Key`. |
+| `server_configuration_error`   | 503    | Relay cannot perform this operation because required server-side delivery configuration is unavailable. Retry later.                                                        |
+| `internal_error`               | 500    | Relay-side failure. Safe to retry with backoff; your idempotency key prevents duplicates.                                                                                   |
 
 ## Retry guidance
 
@@ -152,11 +170,6 @@ Branch on `code` and log `message`. Handle unknown codes by HTTP status class.
   jitter, capped around 60 s. Reuse the same `Idempotency-Key` for each attempt.
 * For other `4xx` responses, update the request or credential before trying again.
 * For incoming webhooks, return `408`, `429`, or a `5xx` when you want Relay to retry; any other non-`2xx` dead-letters the delivery immediately. Deduplicate every attempt by `event_id`.
-
-## Limits
-
-Every size, count, and rate ceiling lives in one place:
-[Limits and rate limits](https://docs.relayapp.im/reference/limits).
 
 ## See also
 
@@ -168,50 +181,50 @@ Every size, count, and rate ceiling lives in one place:
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Developer data access and retention
 
 > What an agent backend can access, what stays private, and what removal means.
 
-An Agent Token is scoped to exactly one Relay agent. It grants no access to a
+An Agent Token is scoped to a single Relay agent. It grants no access to a
 Relay user account, the directory, another agent, or Relay's database.
 
 ## What the backend receives
 
 Your backend receives this for an active conversation:
 
-|     | Data                                                                                                                                   |
-| :-: | -------------------------------------------------------------------------------------------------------------------------------------- |
-|  ✅  | Message content and ordered parts                                                                                                      |
-|  ✅  | Sender and conversation IDs                                                                                                            |
-|  ✅  | Reply targets and reactions                                                                                                            |
-|  ✅  | Delivery and read watermarks                                                                                                           |
-|  ✅  | Attachment references included in messages                                                                                             |
-|  ✅  | Timestamps and ordering sequences                                                                                                      |
-|  ✅  | Name and verified phone number of a user in an active conversation, via `GET /v1/users/{user_id}`, [guide](https://docs.relayapp.im/guides/identifying-users) |
-|  ❌  | Email address or address book                                                                                                          |
-|  ❌  | The user's other agents or unrelated conversations                                                                                     |
-|  ❌  | Ambient group content the agent was not invoked on                                                                                     |
+|     | Data                                                                                                                                                  |
+| :-: | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  ✅  | Message content and ordered parts                                                                                                                     |
+|  ✅  | Sender and conversation IDs                                                                                                                           |
+|  ✅  | Reply targets and reactions                                                                                                                           |
+|  ✅  | Delivery and read watermarks                                                                                                                          |
+|  ✅  | Attachment references included in messages                                                                                                            |
+|  ✅  | Timestamps and ordering sequences                                                                                                                     |
+|  ✅  | Name and verified phone number of a user in an active conversation, via `GET /v1/users/{user_id}`. See [Identifying users](https://docs.relayapp.im/guides/identifying-users) |
+|  ❌  | Email address or address book                                                                                                                         |
+|  ❌  | The user's other agents or unrelated conversations                                                                                                    |
+|  ❌  | Ambient group content the agent was not invoked on                                                                                                    |
 
-Relay exposes a stable Relay user ID inside message and receipt payloads, and
-`GET /v1/users/{user_id}` resolves that ID to the user's name and verified
-phone number while you share an active conversation. See
-[Identifying users](https://docs.relayapp.im/guides/identifying-users).
+Message and receipt payloads carry a stable Relay user ID.
 
 ## Conversation access
-
-Access depends on the conversation type.
 
 | Conversation | What the backend can read                                                             |
 | ------------ | ------------------------------------------------------------------------------------- |
 | Direct       | Events and history, only while the agent holds the relationship the endpoint requires |
 | Group        | Explicitly invoked human messages, plus the agent's own replies                       |
 
-> **Warning:**
->   Group membership is not transcript authority. Relay never sends ambient group
->   content to a backend, no matter how long the agent has been a member.
-
-Request only the history the current task needs. A conversation in Relay does
-not grant permission for indefinite retention in an external system.
+Request only the history the current task needs; a conversation in Relay does
+not authorize indefinite retention in an external system.
 
 ## Contact discovery
 
@@ -229,8 +242,6 @@ caller's number.
 
 ## Agent visibility
 
-Visibility is one authoritative setting.
-
 | Setting      |                     Store                     | Exact handle | Share profile |
 | ------------ | :-------------------------------------------: | :----------: | :-----------: |
 | **Public**   | ✅ after the listing is approved and published |       ✅      |       ✅       |
@@ -240,10 +251,9 @@ Visibility is one authoritative setting.
 `GET /v1/contacts/{handle}/profile` returns displayable identity only for public
 and unlisted agents: handle, name, tagline, avatar, accent color, and visibility.
 
-The Store catalog is a separate read model. Changing visibility never installs
-or removes an agent for a user.
+Changing visibility never installs or removes an agent for a user.
 
-> **Note:**
+> **Info:**
 >   Tokens, owner identity, system prompts, provider configuration, and backend
 >   details are never exposed through any public route.
 
@@ -272,31 +282,31 @@ every write.
 > **Note:**
 >   The current webhook catalog does not emit installation, removal, blocking, or
 >   account-deletion events. Install lifecycle events are on the
->   [roadmap](https://docs.relayapp.im/roadmap).
+>   [API availability](https://docs.relayapp.im/roadmap).
 
 ## Retention and deletion
 
-Relay stores the canonical transcript needed to operate the messenger. Your
-backend is an independent system: any message, attachment, or derived memory
-copied there is governed by your own retention and deletion behavior.
+Relay stores the transcript needed to operate the messenger. Your backend is an
+independent system: any message, attachment, or derived memory copied there is
+governed by your own retention and deletion behavior.
 
-Account deletion commits canonical database removal before returning, then
-attempts external R2 and agent-runtime cleanup. The response reports which stage
-it reached:
+Account deletion commits database removal before returning, then attempts
+external R2 and agent-runtime cleanup. The response reports which stage it
+reached:
 
-| `cleanup.status` | Meaning                                     |
-| ---------------- | ------------------------------------------- |
-| `completed`      | Every external target is cleared            |
-| `pending`        | Durable retry still owns unfinished targets |
+| `cleanup.status` | Meaning                                   |
+| ---------------- | ----------------------------------------- |
+| `completed`      | Every external target is cleared          |
+| `pending`        | A retry job still owns unfinished targets |
 
 Each response includes a non-secret `cleanup.receipt_id`. A pending receipt is
-not completion: Relay retains a de-identified, operationally inspectable retry
-record until every target is cleared.
+not completion: Relay retains a de-identified retry record until every target is
+cleared.
 
 > **Warning:**
 >   Relay cannot erase copies your backend holds. Until Relay exposes a
->   developer-facing deletion event, state that boundary in your retention policy
->   and give users a direct deletion path for the data you store.
+>   developer-facing deletion event, state that in your retention policy and give
+>   users a direct deletion path for the data you store.
 
 ## See also
 
@@ -308,13 +318,22 @@ record until every target is cleared.
 
 ---
 
-# Developer preview availability
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
 
-> The current developer API surface, proof boundary, and what comes next.
+# API availability
 
-Check a capability here before designing against it. **Available in developer
-preview** means the route exists in the current API contract; it is not a claim
-of production or physical-device proof.
+> The current developer API surface and what comes next, in order.
+
+**Available in developer preview** means the route exists in the current API
+contract; what is proved in production today is on
+[Current status](https://docs.relayapp.im/current-status).
 
 ## Available in developer preview
 
@@ -324,7 +343,7 @@ of production or physical-device proof.
 |  ✅  | Send messages: `text`, `link_preview`, `data`, `media`, and `voice_memo` parts | `POST /v1/messages` · [guide](https://docs.relayapp.im/guides/sending-messages)                                                                                                                                                                                        |
 |  ✅  | Attachment upload & metadata (100 MB)                                          | `POST /v1/attachments`, `GET /v1/attachments/{id}` · [guide](https://docs.relayapp.im/guides/attachments)                                                                                                                                                              |
 |  ✅  | Reply threading (message- or part-targeted)                                    | `reply_to` on send                                                                                                                                                                                                                             |
-|  ✅  | Streaming replies                                                              | Vercel AI SDK UIMessageStream v1 in one request; one canonical message · [guide](https://docs.relayapp.im/guides/streaming)                                                                                                                                            |
+|  ✅  | Streaming replies                                                              | Vercel AI SDK UIMessageStream v1 in one request; one stored message · [guide](https://docs.relayapp.im/guides/streaming)                                                                                                                                               |
 |  ✅  | Reactions, incl. arbitrary emoji                                               | `POST /v1/messages/{id}/reactions` · [guide](https://docs.relayapp.im/guides/reactions)                                                                                                                                                                                |
 |  ✅  | Message edit and unsend                                                        | `PATCH` / `DELETE /v1/messages/{id}` with sender-only windows and revision history; [concepts](https://docs.relayapp.im/concepts#edit-and-unsend)                                                                                                                      |
 |  ✅  | Typing indicator, with optional label                                          | `POST /v1/conversations/{id}/typing` · [guide](https://docs.relayapp.im/guides/typing-indicators)                                                                                                                                                                      |
@@ -332,7 +351,7 @@ of production or physical-device proof.
 |  ✅  | Delivery & read receipts (receive)                                             | `message.delivered` / `message.read` · [event types](https://docs.relayapp.im/reference/events)                                                                                                                                                                        |
 |  ✅  | Conversation history                                                           | `GET /v1/conversations/{id}/messages` · [guide](https://docs.relayapp.im/guides/conversation-history)                                                                                                                                                                  |
 |  ✅  | Signed webhooks                                                                | `POST`, `GET`, `PATCH`, and `DELETE /v1/webhooks`; secret rotation · [guide](https://docs.relayapp.im/guides/webhooks)                                                                                                                                                 |
-|  ✅  | Durable long polling                                                           | `GET /v1/events`; one consumer, durable-before-ack cursors, mutually exclusive with webhooks · [delivery model](https://docs.relayapp.im/guides/delivery-model)                                                                                                        |
+|  ✅  | Long polling                                                                   | `GET /v1/events`; one consumer, cursors saved before ack, mutually exclusive with webhooks · [delivery model](https://docs.relayapp.im/guides/delivery-model)                                                                                                          |
 |  ✅  | Idempotent sends                                                               | required `Idempotency-Key`                                                                                                                                                                                                                     |
 |  ✅  | Public, unlisted, and private visibility                                       | Public submits for review and appears in the Store only after approval/publication; unlisted resolves by exact handle/share link; private is owner-only · [guide](https://docs.relayapp.im/guides/your-agent)                                                          |
 |  ✅  | Group conversations                                                            | People create groups and add agents in the app. Agents receive `message.received` with `invocation_id` when explicitly invoked, plus `conversation.added` / `conversation.updated` / `conversation.removed` · [event types](https://docs.relayapp.im/reference/events) |
@@ -355,6 +374,12 @@ In planned order:
 6. **Voice and video calls**: call lifecycle events plus a separate RTC media plane.
 
 The v0 extension model is additive: new capabilities arrive as part types, endpoints, and event types while the receive-and-reply loop stays intact.
+
+## Deliberately later
+
+These stay out of scope until the reliable text relationship holds: an open
+marketplace, payouts and subscriptions, automatic routing, production voice and
+video calls, payments, location, general interactive cards, and Android.
 
 ## See also
 

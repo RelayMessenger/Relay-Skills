@@ -11,9 +11,7 @@ description: >
   rotation, sending ordered typed parts (text, media, voice_memo,
   link_preview, data), attachments, streaming a Vercel AI SDK UIMessageStream
   v1 into one canonical message, typing indicators, reactions and tapbacks,
-  delivery and read receipt watermarks, interactive message components
-  (buttons, select, confirm, card, agent permission request) with
-  origin-tagged tap results, Standard Webhooks signature verification and
+  delivery and read receipt watermarks, Standard Webhooks signature verification and
   secret rotation, durable long polling with cursors, group conversations and
   invocation_id replies, conversation history recovery, identifying users,
   rate limits and size limits, error codes, and the developer-preview
@@ -25,8 +23,7 @@ description: >
   idempotent send, POST /v1/messages, /v1/webhooks, /v1/events, long polling,
   cursor, UIMessageStream, vercel ai sdk, stream=true, typed parts, text part,
   data part, media part, voice memo, link preview, quick replies, suggestions,
-  message components, buttons component, select component, confirm component,
-  card component, agent_permission_request, tapback, read receipt, typing
+  tapback, read receipt, typing
   indicator, group conversation, group invocation, conversation history,
   attachment upload, capability url, rate limit, 429, 202 accepted,
   agent-to-user messaging, consumer messaging channel, imessage-style agent.
@@ -53,7 +50,6 @@ webhook or long polling.
 | `getting-started.md` | The quickstart loop, creating and connecting an agent, Agent Token auth and rotation |
 | `messages.md` | Ordered typed parts, attachments, voice memos, link previews, quick replies, reactions |
 | `streaming.md` | Piping a Vercel AI SDK UIMessageStream v1 into one canonical message; typing indicators |
-| `components.md` | Interactive components: buttons, select, confirm, card, permission request, and their tap results |
 | `events-and-delivery.md` | The delivery model, signed webhooks, long polling, every event payload, receipts, history recovery, identifying users |
 | `groups.md` | Group conversations, the invocation boundary, `invocation_id` replies, conversation lifecycle |
 | `limits-and-errors.md` | Every size/rate limit, error codes and retry guidance, data access boundaries, the availability matrix |
