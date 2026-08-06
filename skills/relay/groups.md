@@ -1,27 +1,34 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Group conversations
 
 > Receive explicit invocations in a group, reply to them, and follow membership changes.
 
-People create groups in the Relay app and add agents to them. Your backend
-receives an event only when a human explicitly invokes your agent, and replies
-to that invocation with the ID Relay supplied.
+An agent added to a group receives only the messages that invoke it, plus its
+own replies. It never receives the rest of the conversation, including anything
+the group said before the agent was added.
 
-## The invocation boundary
-
-Group membership is not transcript authority. This is the single rule that
-shapes everything else on this page.
-
-| Your backend receives                      | Your backend does not receive        |
-| ------------------------------------------ | ------------------------------------ |
-| Messages that explicitly invoke your agent | Ambient group conversation           |
-| Your agent's own replies, in history       | Messages between other participants  |
-| Membership and metadata lifecycle events   | Any message from before it was added |
-
-> **Warning:**
->   An agent added to a group yesterday cannot read what the group said this
->   morning. Only invocations reach you.
+```mermaid
+flowchart TB
+  subgraph G["Group conversation"]
+    M1["Alice: dinner Thursday?"]
+    M2["Bob: works for me"]
+    M3["Alice: @scheduler when are we free?"]
+  end
+  M1 -.->|not delivered| X["Your backend"]
+  M2 -.->|not delivered| X
+  M3 ==>|"message.received<br/>+ invocation_id"| X
+  X ==>|"POST /v1/messages<br/>+ invocation_id"| G
+```
 
 ## Receive an invocation
 
@@ -47,13 +54,13 @@ usual message envelope.
 }
 ```
 
-Treat `invocation_id` as required state for the reply. Store it with the
-`event_id` you are already deduplicating on.
+Store `invocation_id` with the `event_id` you are already deduplicating on. The
+reply is rejected without it.
 
 ## Reply to an invocation
 
-Reply exactly as you would in a direct conversation, and pass the
-`invocation_id` through.
+Reply as you would in a direct conversation, and pass the `invocation_id`
+through.
 
 ```bash
 curl -sS -X POST "$RELAY_API_URL/v1/messages" \
@@ -79,6 +86,9 @@ curl -sS -X POST \
   --data-binary @reply.sse
 ```
 
+An invocation is consumed once. Reuse the same `Idempotency-Key` to retry a
+reply safely; do not reuse the `invocation_id` for a second, different message.
+
 ### Invocation errors
 
 | Status                | Message                                                         | Cause                                                |
@@ -90,13 +100,9 @@ curl -sS -X POST \
 | `403 forbidden`       | `message is outside this agent's invocation scope`              | The reply targets content you were never invoked on  |
 | `422 invalid_request` | `invocation_id must be a Relay invocation id`                   | Malformed ID                                         |
 
-> **Warning:**
->   An invocation is consumed once. Reuse the same `Idempotency-Key` to retry a
->   reply safely; do not reuse the `invocation_id` for a second, different message.
+## Lifecycle events
 
-## Membership and metadata events
-
-Relay emits lifecycle events to every active group agent.
+Relay emits these to every active group agent.
 
 | Event                  | Emitted when                                    |
 | ---------------------- | ----------------------------------------------- |
@@ -104,16 +110,60 @@ Relay emits lifecycle events to every active group agent.
 | `conversation.updated` | A human renames the group or changes its avatar |
 | `conversation.removed` | A human removes your agent                      |
 
-Each payload is typed and self-contained: `conversation_id`, the human `actor`,
-the affected participant when the mutation targets one, the current
-`membership_version`, a structured `system_mutation` with old and new values,
-and the canonical system `message`.
+Each payload carries `conversation_id`, the human `actor`, the affected
+participant when the mutation targets one, the current `membership_version`, a
+`system_mutation` with old and new values, and the system `message`. Full
+payloads are in [event types](https://docs.relayapp.im/reference/events).
 
-Full payloads are in [event types](https://docs.relayapp.im/reference/events).
+## Propose a group
 
-> **Warning:**
->   A lifecycle event grants no transcript access. `conversation.added` tells you
->   that you are a member, not what the group has been saying.
+`POST /v1/groups/invites` commits one consent card into each target's direct
+conversation with your agent. Every target must have your agent added, and each
+person answers for themselves.
+
+```bash
+curl -sS -X POST "$RELAY_API_URL/v1/groups/invites" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: invite-founders-dinner" \
+  -d '{
+    "title": "Founders dinner",
+    "user_ids": ["usr_01K1M8ALICE", "usr_01K1M8BOB"],
+    "reason": "You both asked for an introduction"
+  }'
+```
+
+The first accept creates the conversation and puts that person in it beside
+your agent. Every later accept joins the same conversation right away, and the
+invite stays open for whoever has not answered yet.
+
+| Invite `state` | Meaning                                                 | Conversation                                                                               |
+| -------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `pending`      | Open, nobody has joined yet                             | Not created, unless the invite targeted an existing group; then `conversation_id` names it |
+| `active`       | Open, at least one person joined                        | Live, at `conversation_id`                                                                 |
+| `completed`    | Closed because everyone answered or the deadline passed | Live, at `conversation_id`                                                                 |
+| `expired`      | Closed with nobody joined                               | Never created                                                                              |
+
+| Member `state` | Meaning                                        |
+| -------------- | ---------------------------------------------- |
+| `invited`      | Has not answered yet                           |
+| `accepted`     | Joined the live conversation                   |
+| `declined`     | Answered no, and stays out of the conversation |
+
+Read one member's `state` to know whether that person is in the conversation. A
+`conversation_id` on a `pending` invite names the destination group your agent
+proposed into, so it tells you where the invite leads rather than who consented.
+
+| Event                    | Emitted when                                                |
+| ------------------------ | ----------------------------------------------------------- |
+| `group.invite.joined`    | One person accepts. Carries `conversation_id` and `user_id` |
+| `group.invite.declined`  | One person declines. Carries `user_id`                      |
+| `group.invite.completed` | The invite closes with a live conversation                  |
+| `group.invite.expired`   | The invite closes with nobody joined                        |
+
+> **Info:**
+>   A decline answers for that person alone. It removes nobody from a live
+>   conversation and leaves the invite open for everyone still deciding.
 
 ## Limits
 
@@ -139,12 +189,10 @@ person's Relay session. There is no Agent Token route for them.
 | Invoke an agent                       | A person, in the app                                                        |
 | Reply to an invocation                | Your backend                                                                |
 | Send a group invite card              | Your backend, via `POST /v1/groups/invites`; the person consents in the app |
+| Accept or decline an invite           | A person, in the app                                                        |
 
 > **Note:**
->   Direct membership writes stay human. A backend can propose with an invite card,
->   and `group.invite.completed` or `group.invite.expired` reports the terminal
->   state, but only a person's consent changes who is in a group. Fuller
->   agent-initiated management is on the [roadmap](https://docs.relayapp.im/roadmap).
+>   Fuller agent-initiated group management is on the [API availability](https://docs.relayapp.im/roadmap).
 
 ## Next steps
 
@@ -156,11 +204,31 @@ person's Relay session. There is no Agent Token route for them.
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Conversation lifecycle
 
-> Understand how a direct conversation begins, remains active, and is recovered.
+> Follow a direct conversation from install through removal, return, and recovery.
 
-A conversation is the durable thread between a Relay user and an agent. The current developer preview supports direct conversations initiated inside Relay.
+The current developer preview supports direct conversations started inside Relay.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Installed: user installs the agent
+    Installed --> Active: first message
+    Active --> Active: send, reply, react, read
+    Active --> Removed: user removes the agent
+    Active --> Blocked: user blocks the agent
+    Removed --> Active: user adds it again<br/>(same conversation_id)
+    Blocked --> Removed: user unblocks
+```
 
 ## How a conversation begins
 
@@ -187,8 +255,6 @@ A direct conversation contains one user and one agent. Relay serializes its mess
 
 Relay checks both conversation membership and the user's active installation before accepting a send. A `403 forbidden` response here usually means the agent is no longer a participant or installed.
 
-Keep each send and reply target within the relationship that produced the conversation ID.
-
 ## Remove and return
 
 | Action                   | Effect on the conversation                                                                                                                           |
@@ -200,12 +266,9 @@ Keep each send and reply target within the relationship that produced the conver
 
 ## Recover the thread
 
-Two identifiers do different jobs. Keep them separate when storing and
-recovering state.
-
 | Identifier | Answers                                              |
 | ---------- | ---------------------------------------------------- |
-| `event_id` | Have I already processed this durable change?        |
+| `event_id` | Have I already processed this event?                 |
 | `sequence` | Where does this message sit inside one conversation? |
 
 After a restart or an uncertain webhook attempt, rebuild from

@@ -1,5 +1,14 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Sending messages
 
 > Send ordered parts with POST /v1/messages, reply to a message or a part, and make retries safe.
@@ -24,30 +33,31 @@ Relay returns `202 Accepted` with `message_id` and the stored message. Each stor
 
 ## Part types
 
-A message carries 1–32 parts. Order is presentation order.
+| Type           | Shape                                                                                                    | Limits                                                                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`         | `{ "type": "text", "text": "Hello" }`                                                                    | 8 KB per part                                                                                                                                        |
+| `link_preview` | `{ "type": "link_preview", "url": "https://example.com" }`                                               | public HTTPS URL, up to 2,048 characters                                                                                                             |
+| `data`         | `{ "type": "data", "data": { ... } }`                                                                    | any JSON, 16 KB; stored and delivered as sent, rendered through fallback text                                                                        |
+| `media`        | `{ "type": "media", "url": "https://…", "content_type": "video/mp4" }` or `{ "attachment_id": "att_…" }` | send one source; optional `content_type`, `media_kind` (`image` \| `video` \| `audio` \| `file`), and `width` + `height` in pixels (always together) |
+| `voice_memo`   | `{ "type": "voice_memo", "url": "https://…" }` or `{ "type": "voice_memo", "attachment_id": "att_…" }`   | send `url` or `attachment_id`, never both; `duration_ms` is optional                                                                                 |
 
-| Type           | Shape                                                                                                  | Limits                                                                |
-| -------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `text`         | `{ "type": "text", "text": "Hello" }`                                                                  | 8 KB per part                                                         |
-| `link_preview` | `{ "type": "link_preview", "url": "https://example.com" }`                                             | public HTTPS URL, up to 2,048 characters                              |
-| `data`         | `{ "type": "data", "data": { ... } }`                                                                  | any JSON, 16 KB; recognized component kinds get additional validation |
-| `media`        | `{ "type": "media", "url": "https://…" }` or `{ "attachment_id": "att_…" }`                            | exactly one of `url` \| `attachment_id`                               |
-| `voice_memo`   | `{ "type": "voice_memo", "url": "https://…" }` or `{ "type": "voice_memo", "attachment_id": "att_…" }` | exactly one source; `duration_ms` is optional                         |
-
-> **Note:**
+> **Tip:**
 >   Upload a file to get an `attachment_id`, or pass a public `url`. See [Attachments](https://docs.relayapp.im/guides/attachments).
 
+Relay returns every canonical `media` part with `content_type` and
+`media_kind`. For uploaded files, the stored upload MIME type is authoritative.
+For a public URL, declare `content_type` when its path has no useful file
+extension.
+
 `data` parts carry integration-defined JSON such as tool results and artifacts.
-Relay also recognizes the v1 [message component](https://docs.relayapp.im/components) kinds: `buttons`,
-`select`, `card`, `confirm`, and `agent_permission_request`.
 
-| Case                              | Behavior                                                                                                                                  |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Missing component `data.fallback` | Synthesized before storage                                                                                                                |
-| Unknown kind                      | Passes through unchanged, so older clients render the fallback instead of dropping the part                                               |
-| `group_invite` kind               | Reserved for cards committed by `POST /v1/groups/invites`; sending it through the ordinary message endpoint returns `422 invalid_request` |
+| Case                                                                                  | Behavior                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recognized kinds (`buttons`, `select`, `card`, `confirm`, `agent_permission_request`) | Validated on send against the [component limits](https://docs.relayapp.im/reference/limits#message-components) and accepted in 1:1 conversations only; sending one in a group returns `422 invalid_request`. Interactive rendering is currently disabled, so clients show fallback text |
+| Any other `data` shape                                                                | Stored and delivered unchanged, so clients render fallback text instead of dropping the part                                                                                                                                                                    |
+| `group_invite` kind                                                                   | Reserved for cards committed by `POST /v1/groups/invites`; sending it through the ordinary message endpoint returns `422 invalid_request`                                                                                                                       |
 
-Clients that cannot render a part use its component fallback when present, then the message's `fallback_text`, derived from the first text part, first link preview, data fallback, `Voice memo`, or `[attachment]`.
+Clients that cannot render a part use its `data.fallback` string when present, then the message's [`fallback_text`](https://docs.relayapp.im/concepts#messages-and-ordered-parts).
 
 Use [Voice memos](https://docs.relayapp.im/guides/voice-memos) when audio should appear in the inline voice player, and [Rich link previews](https://docs.relayapp.im/guides/rich-link-previews) when a URL should render as a preview card.
 
@@ -83,70 +93,14 @@ Each suggestion is `{ "text": "…" }` with 1 to 96 characters.
 | On tap        | The `text` is sent back as an ordinary user text message                             |
 | Your handling | A normal [`message.received`](https://docs.relayapp.im/guides/webhooks) event, no extra code                 |
 
-The user can always type a free-form answer instead.
-
-Relay lays the options out for you: a short set renders as inline rows in the transcript, and a longer set collapses into a single card that opens a full-height picker sheet. You don't choose the presentation.
-
-> **Note:**
->   Quick-reply suggestions are separate from message components. Suggestions are transient presentation on the newest message and send a text part. Components are durable `data` parts in the transcript and return an origin-tagged data message.
-
-## Message components
-
-Use a component data part when the choices must remain attached to their source message or the tap must carry a stable option identity:
-
-```bash
-curl -sS -X POST "https://api.relayapp.im/v1/messages" \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: booking-evt_01JZE9M2XW" \
-  -d '{
-    "conversation_id": "cnv_01JZC7K4RQ",
-    "parts": [
-      { "type": "data", "data": {
-        "kind": "buttons",
-        "prompt": "Pick your booking slot",
-        "options": [
-          { "id": "slot_fri_7", "label": "Friday 7pm", "style": "primary" },
-          { "id": "slot_sat_8", "label": "Saturday 8pm" }
-        ]
-      } }
-    ]
-  }'
-```
-
-Tapping `slot_sat_8` sends a normal user message through the existing message pipeline:
-
-```json
-{
-  "parts": [{
-    "type": "data",
-    "data": {
-      "origin": {
-        "kind": "data_action",
-        "message_id": "msg_01JZM4Q9VN",
-        "part_index": 0,
-        "option_id": "slot_sat_8",
-        "source_kind": "buttons"
-      },
-      "option_id": "slot_sat_8",
-      "label": "Saturday 8pm"
-    }
-  }],
-  "fallback_text": "Saturday 8pm"
-}
-```
-
-The agent receives this as the next ordinary `message.received` event. Normal message idempotency covers retries. The client marks the successful choice selected and disables its siblings; your agent should still treat `option_id` as idempotent because stale taps are possible.
-
-See the catalog and per-kind wire contracts in [Message components](https://docs.relayapp.im/components), [Buttons](https://docs.relayapp.im/components/buttons), [Select](https://docs.relayapp.im/components/select), [Card](https://docs.relayapp.im/components/card), [Confirm](https://docs.relayapp.im/components/confirm), and [Agent permission request](https://docs.relayapp.im/components/agent_permission_request).
+Relay chooses the presentation: a short set renders as inline rows in the transcript, and a longer set collapses into a single card that opens a full-height picker sheet.
 
 ## Replying to a message or a part
 
 In a group, Relay invokes an agent only when a human explicitly selects it or
 replies to one of its messages. The resulting `message.received` event includes
 an `invocation_id`; echo that value as `invocation_id` in the finalized JSON
-request, or as the query parameter for a streamed reply. Ambient group context
-is not delivered to agent backends and does not appear in agent history.
+request, or as the query parameter for a streamed reply.
 
 `reply_to` targets a whole message or a single part:
 
@@ -170,18 +124,24 @@ Generate the key once per logical send and reuse it across retries.
 
 Split content longer than the per-part limit across `text` parts or messages. Each part renders as its own bubble.
 
-Next: pipe your agent's existing output with [Streaming](https://docs.relayapp.im/guides/streaming), or react
-to a user's message with [Reactions](https://docs.relayapp.im/guides/reactions).
-
 ## Next steps
 
 * [Streaming replies](https://docs.relayapp.im/guides/streaming)
+* [Reactions](https://docs.relayapp.im/guides/reactions)
 * [Attachments](https://docs.relayapp.im/guides/attachments)
-* [Message components](https://docs.relayapp.im/components)
 * [Delivery model](https://docs.relayapp.im/guides/delivery-model)
 
 
 ---
+
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
 
 # Attachments
 
@@ -215,8 +175,13 @@ curl -sS -X POST "https://api.relayapp.im/v1/attachments" \
 ```
 
 `Content-Type` sets the stored MIME type (defaults to `application/octet-stream`);
-`X-Relay-Filename` names the file for downloads. Uploads accept up to 100 MB; a
-presigned two-step flow is on the [roadmap](https://docs.relayapp.im/roadmap).
+`X-Relay-Filename` names the file for downloads. A presigned two-step flow is on
+the [API availability](https://docs.relayapp.im/roadmap).
+
+> **Warning:**
+>   Set the real `Content-Type` when uploading video, such as `video/mp4` or
+>   `video/quicktime`. A generic `application/octet-stream` upload also needs
+>   `"media_kind": "video"` on its message part.
 
 ## Send it
 
@@ -238,7 +203,37 @@ curl -sS -X POST "https://api.relayapp.im/v1/messages" \
 
 Use `"type": "voice_memo"` for native inline playback. The uploaded attachment needs an `audio/*` content type. To send an already-hosted file, pass its public HTTPS `url` instead of `attachment_id`.
 
-## Ownership
+For a video uploaded with `Content-Type: video/mp4`, send the attachment ID:
+
+```json
+{
+  "type": "media",
+  "attachment_id": "att_01KXGWNZFRF5BH4959T6JYD9SM"
+}
+```
+
+For an already-hosted video, declare the MIME type so an extensionless URL
+remains playable:
+
+```json
+{
+  "type": "media",
+  "url": "https://cdn.example.com/video-capability",
+  "content_type": "video/mp4"
+}
+```
+
+| Field          | Use                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| `content_type` | Identifies the source MIME type. The upload's stored value is authoritative for `attachment_id`. |
+| `media_kind`   | Selects `image`, `video`, `audio`, or `file` presentation when the MIME type is generic.         |
+
+Relay rejects a `media_kind` that conflicts with a specific `image/*`,
+`video/*`, or `audio/*` MIME type.
+
+Media parts accept optional `width` and `height` (pixels, always together). Clients use the pair to reserve the image's aspect ratio before the bytes download, so declare them when you know the size. When you omit them for an uploaded `image/*` attachment, Relay derives both from the stored bytes (PNG, JPEG, GIF, and WebP) and includes them on the delivered part.
+
+## Who can use an attachment
 
 Attachments belong to their uploader. Referencing another agent's `attachment_id` returns `422 invalid_request`; reading its metadata returns `404 not_found`.
 
@@ -253,7 +248,12 @@ The response includes `state` (`pending`, `available`, or `failed`), `content_ty
 
 ## Receiving media
 
-Incoming `media` and `voice_memo` parts carry a capability `url` that can be downloaded directly.
+Incoming `media` parts carry `content_type`, `media_kind`, and a capability
+`url` that can be downloaded directly. Use `media_kind` for presentation and
+pass `content_type` to the media framework when the URL has no file extension.
+
+Image `media` parts also carry `width` and `height` when the sender declared
+them or Relay derived them at send time.
 
 ## Next steps
 
@@ -264,11 +264,20 @@ Incoming `media` and `voice_memo` parts carry a capability `url` that can be dow
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Voice memos
 
 > Send recorded audio with Relay's native inline player.
 
-A `voice_memo` part tells Relay that an audio file is a spoken message, not a generic attachment. It appears in the conversation with inline playback, duration, and waveform presentation.
+A `voice_memo` part tells Relay that an audio file is a spoken message. It appears in the conversation with inline playback, duration, and waveform presentation.
 
 ## Send from a public URL
 
@@ -287,7 +296,7 @@ curl -sS -X POST "https://api.relayapp.im/v1/messages" \
   }'
 ```
 
-Use a public HTTPS URL. Relay stores it on the canonical part so history, sync, and message events all carry the same playback source.
+Use a public HTTPS URL. Relay stores it on the message part, so history, sync, and message events all carry the same playback source.
 
 ## Send an uploaded file
 
@@ -313,14 +322,14 @@ The attachment needs to be available, belong to the sender, and declare an `audi
 | Spoken message with inline playback    | `voice_memo` |
 | Song, podcast, or arbitrary audio file | `media`      |
 
-Both use the same file storage. The part discriminator preserves the sender's presentation intent.
+Both use the same file storage.
 
 ## Rules
 
-* Pass exactly one of `url` or `attachment_id`.
+* Pass `url` or `attachment_id`, not both.
 * `duration_ms` is optional and accepts a non-negative integer.
 * Relay validates the `audio/*` MIME family for uploaded files and does not transcode them. M4A/AAC (`audio/mp4`) is the recommended interoperable format; MP3 and WAV are also playable by Relay's AVFoundation player.
-* Voice memos use the normal message response, history, replies, reactions, idempotency, and delivery/read receipts. There is no second voice-memo delivery pipeline.
+* Voice memos use the normal message response, history, replies, reactions, idempotency, and delivery/read receipts.
 
 Incoming `voice_memo` parts use the same shape and include a downloadable `url`.
 
@@ -332,11 +341,20 @@ Incoming `voice_memo` parts use the same shape and include a downloadable `url`.
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Rich link previews
 
 > Render a URL as a native card with page metadata.
 
-A `link_preview` part asks Relay to render a URL as a native preview card. The conversation shows page metadata when it can be loaded and retains a tappable URL fallback when it cannot.
+A `link_preview` part asks Relay to render a URL as a native preview card.
 
 ## Send a preview
 
@@ -377,7 +395,7 @@ Each stored part receives a stable `part_index`, so replies and reactions can ta
 ## Preview metadata and fallback
 
 Relay's iOS app loads page metadata through the native Link Presentation
-framework. What the reader sees depends on the destination.
+framework.
 
 | Destination                                                                      | Card                                     |
 | -------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -399,17 +417,25 @@ replies, reactions, and delivery and read receipts.
 ## Next steps
 
 * [Sending messages](https://docs.relayapp.im/guides/sending-messages) for every part type
-* [Message components](https://docs.relayapp.im/components) for interactive alternatives
 * [Reactions](https://docs.relayapp.im/guides/reactions) for targeting one part
 
 
 ---
 
+> ## Agent Instructions
+> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
+> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
+> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
+> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
+> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
+> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
+
 # Reactions
 
 > Add and remove tapback-style reactions, target a specific part, and receive reaction events.
 
-A reaction targets a whole message or one part of it. Relay emits an event when a user adds or removes a reaction from the agent's message.
+A reaction targets a whole message or one part of it.
 
 ## Add or remove a reaction
 
@@ -468,4 +494,3 @@ Use a reaction when acknowledgment is enough, for example, `like` a “thanks”
 
 * [Event types](https://docs.relayapp.im/reference/events)
 * [Sending messages](https://docs.relayapp.im/guides/sending-messages)
-* [Message components](https://docs.relayapp.im/components)
