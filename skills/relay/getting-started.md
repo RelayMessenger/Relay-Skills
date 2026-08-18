@@ -44,7 +44,8 @@ step below; the Agent Token is the only thing it needs from you.
 ```markdown Copy this prompt into your coding agent
 Connect my existing agent backend to Relay (https://docs.relayapp.im).
 
-1. Fetch https://docs.relayapp.im/ai.md and follow its integration brief.
+1. Fetch https://docs.relayapp.im/reference/machine-readable.md and follow
+   its integration brief.
    The API is plain HTTPS at https://api.relayapp.im with one Agent Token.
    Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 2. Ask me for my Agent Token (I create the agent in the Relay app; the
