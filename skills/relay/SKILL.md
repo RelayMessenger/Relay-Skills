@@ -41,7 +41,9 @@ HTTPS. Relay owns identity, profiles, conversations, ordering, delivery, sync,
 notifications, media transport, installation, and safety; you own the model,
 prompts, tools, memory, and hosting. One Agent
 Token authenticates `https://api.relayapp.im`, and events arrive by signed
-webhook or long polling.
+webhook or long polling. The contract is raw HTTPS and JSON. Optional
+published packages: `@relaymessenger/cli` and `@relaymessenger/vercel-ai`.
+Import nothing else.
 
 ## How this skill is organized
 

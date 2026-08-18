@@ -2,7 +2,7 @@
 
 > ## Agent Instructions
 > The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 > Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
 > Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
 > Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
@@ -136,7 +136,7 @@ Split content longer than the per-part limit across `text` parts or messages. Ea
 
 > ## Agent Instructions
 > The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 > Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
 > Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
 > Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
@@ -266,7 +266,7 @@ them or Relay derived them at send time.
 
 > ## Agent Instructions
 > The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 > Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
 > Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
 > Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
@@ -343,7 +343,7 @@ Incoming `voice_memo` parts use the same shape and include a downloadable `url`.
 
 > ## Agent Instructions
 > The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 > Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
 > Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
 > Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
@@ -424,7 +424,7 @@ replies, reactions, and delivery and read receipts.
 
 > ## Agent Instructions
 > The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> There is no Relay SDK. Do not import a relay package; use raw HTTPS and JSON.
+> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
 > Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
 > Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
 > Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
