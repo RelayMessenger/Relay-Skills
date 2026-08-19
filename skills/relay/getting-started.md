@@ -1,134 +1,118 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
-> ## Agent Instructions
-> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
-> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
-> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
-> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
-> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
-
 # Quickstart
 
-> From Agent Token to a reply in the user's thread, in minutes.
+> Receive one Relay message and send one reply.
 
-Create an agent in Relay and save the Agent Token shown once.
+Receive one signed message event, mark it Read, and send one reply.
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant R as Relay
-    participant B as Your backend
-    B->>R: POST /v1/webhooks
-    R-->>B: signing secret (once)
-    U->>R: "What time works tomorrow?"
-    R->>B: message.received (signed)
-    B-->>R: 202 Accepted
-    B->>R: POST /v1/messages (Idempotency-Key)
-    R->>U: "Tomorrow at 2:00 PM works."
-```
+Verify the token first. Then pick a receive path:
 
-Set these once.
+| Where the backend runs                  | Receive path         |
+| --------------------------------------- | -------------------- |
+| Laptop or any host without a public URL | Long poll. No tunnel |
+| Public HTTPS server                     | Webhook              |
+
+> **Warning:**
+>   Webhooks and long polling are mutually exclusive per Agent Token. Polling while
+>   a webhook is enabled returns `409 conflict`.
+
+## Before you start
+
+You need:
+
+| Requirement           | Where it comes from                                 | Needed for        |
+| --------------------- | --------------------------------------------------- | ----------------- |
+| Agent Token           | Relay shows it once when you create an agent        | Both paths        |
+| Public HTTPS endpoint | Your own hosting                                    | Webhook path only |
+| Signing secret        | Relay returns it once when you register the webhook | Webhook path only |
+
+Set the API origin and token:
 
 ```bash
 export RELAY_API_URL="https://api.relayapp.im"
 export RELAY_AGENT_TOKEN="rly_live_..."
 ```
 
-**Step 1: Hand this page to your coding agent (optional)**
-
-Paste this into Claude Code, Codex, or Cursor. The agent carries out every
-step below; the Agent Token is the only thing it needs from you.
-
-```markdown Copy this prompt into your coding agent
-Connect my existing agent backend to Relay (https://docs.relayapp.im).
-
-1. Fetch https://docs.relayapp.im/ai.md and follow its integration brief.
-   The API is plain HTTPS at https://api.relayapp.im with one Agent Token.
-   Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-2. Ask me for my Agent Token (I create the agent in the Relay app; the
-   rly_live_… token is shown once). Put it in RELAY_AGENT_TOKEN. Never
-   print or commit it.
-3. Add my public HTTPS webhook endpoint to my existing server, register it
-   with POST /v1/webhooks, store the signing_secret I get back, and verify
-   Standard Webhooks signatures over the exact raw body.
-4. On message.received, reply with POST /v1/messages using an
-   Idempotency-Key derived from the event_id.
-5. Verify end to end with GET /v1/agents/me, then send me a test checklist.
-
-For live docs search while you work, add the MCP server:
-claude mcp add --transport http relay-docs https://docs.relayapp.im/mcp
-```
-
-> **Info:**
->   **Working by hand?** Continue below; the steps are identical. Any LLM can
->   also ingest [`llms-full.txt`](https://docs.relayapp.im/llms-full.txt), which
->   bundles every page as one Markdown file.
-
-**Step 2: Register your webhook**
+## Verify the Agent Token
 
 ```bash
-curl -sS -X POST "$RELAY_API_URL/v1/webhooks" \
-  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://agent.example/webhooks/relay"}'
+curl -sS "$RELAY_API_URL/v1/agents/me" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
 ```
 
-Relay returns the signing secret exactly once:
+Relay returns the agent identity:
 
 ```json
 {
-  "webhook": {
-    "id": "wh_01JZWEBHOOK",
-    "url": "https://agent.example/webhooks/relay",
-    "events": ["message.received", "message.edited", "message.unsent", "…"],
-    "enabled": true,
-    "secret_prefix": "whsec_MfKQ9r8G…",
-    "created_at": "2026-07-15T20:00:00.000Z",
-    "updated_at": "2026-07-15T20:00:00.000Z"
-  },
-  "signing_secret": "whsec_..."
-}
-```
-
-It is not returned by list or update requests.
-
-**Step 3: Receive and verify the signed event**
-
-Relay sends the event envelope as the raw JSON request body with
-`webhook-id`, `webhook-timestamp`, and `webhook-signature` headers. Verify
-the signature before parsing the body, reject timestamps older than five
-minutes, store the event, and return a `2xx` quickly.
-
-```json
-{
-  "event_id": "evt_01JZE9M2XW",
-  "event_type": "message.received",
-  "agent_id": "agt_01JZRELAY",
-  "created_at": "2026-07-12T01:21:03.000Z",
-  "data": {
-    "message": {
-      "id": "msg_01JZM3T8AH",
-      "conversation_id": "cnv_01JZC7K4RQ",
-      "sequence": 1,
-      "sender": { "kind": "user", "id": "usr_01JZU1F0BD" },
-      "parts": [{ "part_index": 0, "type": "text", "text": "What time works tomorrow?" }],
-      "reply_to": null,
-      "fallback_text": "What time works tomorrow?",
-      "status": "sent",
-      "created_at": "2026-07-12T01:21:03.000Z"
-    }
+  "agent": {
+    "id": "agt_01JZRELAY",
+    "handle": "scheduler",
+    "display_name": "Scheduler",
+    "tagline": "Finds a time that works",
+    "avatar_url": null,
+    "visibility": "private",
+    "owner_user_id": "usr_01JZU1F0BD",
+    "created_at": "2026-08-10T12:00:00.000Z"
   }
 }
 ```
 
-Delivery is at least once. Deduplicate with `event_id`.
+## Receive and reply
 
-**Step 4: Reply**
+  
+    **Step 1: Poll for one event**
 
-Derive the `Idempotency-Key` from the incoming `event_id` so retries cannot
-create a second reply.
+`GET /v1/events` drains the agent's durable event log. The request
+holds open up to `timeout` seconds and returns as soon as an event
+lands.
+
+```bash
+curl -sS "$RELAY_API_URL/v1/events?timeout=30" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+```
+
+While it waits, open the Relay app and text your agent. The poll
+returns the event:
+
+```json
+{
+  "events": [
+    {
+      "event_id": "evt_01JZE9M2XW",
+      "event_type": "message.received",
+      "agent_id": "agt_01JZRELAY",
+      "created_at": "2026-08-10T12:00:00.000Z",
+      "data": {
+        "message": {
+          "id": "msg_01JZM3T8AH",
+          "conversation_id": "cnv_01JZC7K4RQ",
+          "sequence": 1,
+          "parts": [
+            { "part_index": 0, "type": "text", "text": "What time works tomorrow?" }
+          ]
+        }
+      }
+    }
+  ],
+  "next_cursor": 1
+}
+```
+
+**Step 2: Mark Read and reply**
+
+Mark the exact inbound message Read before model or tool work. This
+call also starts the independent typing signal.
+
+```bash
+curl -sS -X POST \
+  "$RELAY_API_URL/v1/conversations/cnv_01JZC7K4RQ/responding" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message_id":"msg_01JZM3T8AH"}'
+```
+
+Derive the idempotency key from the inbound `event_id`.
 
 ```bash
 curl -sS -X POST "$RELAY_API_URL/v1/messages" \
@@ -137,166 +121,228 @@ curl -sS -X POST "$RELAY_API_URL/v1/messages" \
   -H "Idempotency-Key: reply-evt_01JZE9M2XW" \
   -d '{
     "conversation_id": "cnv_01JZC7K4RQ",
-    "parts": [{ "type": "text", "text": "Tomorrow at 2:00 PM works." }],
-    "reply_to": { "message_id": "msg_01JZM3T8AH", "part_index": 0 }
+    "parts": [{ "type": "text", "text": "Tomorrow at 2:00 PM works." }]
   }'
 ```
 
-Relay returns `202 Accepted` with the stored message.
+Relay returns `202 Accepted` with a `messages` array; this single
+text part stores one message. Stop typing after send, failure, or
+cancellation:
 
-**Step 5: Run the complete handler**
-
-Steps 2 through 4 as one file: verify, store, reply.
-
-  ```typescript server.ts
-  import { createServer } from "node:http";
-  import { Webhook } from "standardwebhooks";
-
-  const wh = new Webhook(process.env.RELAY_SIGNING_SECRET!);
-  const TOKEN = process.env.RELAY_AGENT_TOKEN!;
-  const seen = new Set<string>();
-
-  createServer(async (req, res) => {
-    const body = await new Promise<string>((ok) => {
-      let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => ok(b));
-    });
-    let event: any;
-    try {
-      event = wh.verify(body, req.headers as Record<string, string>);
-    } catch {
-      res.writeHead(401).end("signature rejected"); return;
-    }
-    res.writeHead(202).end(); // ack first, work after
-
-    if (event.event_type !== "message.received") return;
-    if (seen.has(event.event_id)) return; // at-least-once delivery
-    seen.add(event.event_id);
-
-    await fetch("https://api.relayapp.im/v1/messages", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": `reply-${event.event_id}`,
-      },
-      body: JSON.stringify({
-        conversation_id: event.data.message.conversation_id,
-        parts: [{ type: "text", text: "Tomorrow at 2:00 PM works." }],
-      }),
-    });
-  }).listen(8787);
-  ```
-
-  ```python server.py
-  import json, os, urllib.request
-  from http.server import BaseHTTPRequestHandler, HTTPServer
-  from standardwebhooks import Webhook
-
-  wh = Webhook(os.environ["RELAY_SIGNING_SECRET"])
-  TOKEN = os.environ["RELAY_AGENT_TOKEN"]
-  seen = set()
-
-  class Handler(BaseHTTPRequestHandler):
-      def do_POST(self):
-          body = self.rfile.read(int(self.headers["Content-Length"]))
-          try:
-              event = wh.verify(body, dict(self.headers))
-          except Exception:
-              self.send_response(401); self.end_headers(); return
-          self.send_response(202); self.end_headers()  # ack first
-
-          if event["event_type"] != "message.received": return
-          if event["event_id"] in seen: return  # at-least-once delivery
-          seen.add(event["event_id"])
-
-          req = urllib.request.Request(
-              "https://api.relayapp.im/v1/messages",
-              data=json.dumps({
-                  "conversation_id": event["data"]["message"]["conversation_id"],
-                  "parts": [{"type": "text", "text": "Tomorrow at 2:00 PM works."}],
-              }).encode(),
-              headers={
-                  "Authorization": f"Bearer {TOKEN}",
-                  "Content-Type": "application/json",
-                  "Idempotency-Key": f"reply-{event['event_id']}",
-              },
-          )
-          urllib.request.urlopen(req)
-
-  HTTPServer(("", 8787), Handler).serve_forever()
-  ```
-
-Send your agent a message from the Relay app. The reply lands in the thread.
-
-**Step 6: Ask your agent to audit the result (optional)**
-
-```markdown Copy this prompt
-Review my Relay integration against https://docs.relayapp.im/quickstart.md
-and https://docs.relayapp.im/guides/webhooks.md. Check that I verify the
-webhook-signature over the exact raw body, reject stale timestamps, return
-2xx within 10 seconds before doing model work, deduplicate on event_id, and
-derive Idempotency-Key from event_id on every reply. Report anything that
-does not match, with the file and line.
+```bash
+curl -sS -X POST \
+  "$RELAY_API_URL/v1/conversations/cnv_01JZC7K4RQ/typing" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"started":false}'
 ```
 
-<Check>
-  The reply is in the user's thread.
-</Check>
+In a group, copy `data.invocation_id` into `/responding`, typing, and
+the reply.
 
-## If it fails
+**Step 3: Poll again with the cursor**
 
-| Symptom                         | Cause and fix                                                                                                |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `signature rejected` (401)      | The body was parsed or re-serialized before verification. Verify over the exact raw bytes                    |
-| `401 unauthorized` from the API | Wrong or rotated Agent Token. Update `RELAY_AGENT_TOKEN` and retry                                           |
-| No webhook arrives              | The URL must be public HTTPS. Check the registration response and your tunnel                                |
-| Duplicate replies               | You replied before deduplicating. Check `event_id` before side effects, and derive `Idempotency-Key` from it |
-| `409 idempotency_conflict`      | Same key, different body. Reuse the key only for the identical reply                                         |
+Pass the returned `next_cursor` on the next poll. Passing a cursor
+acknowledges every event at or below it, so persist it before making
+the next request, never after.
+
+```bash
+curl -sS "$RELAY_API_URL/v1/events?cursor=1&timeout=30" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
+```
+
+That is the whole loop: poll, handle, persist the cursor, poll again.
+See [Long polling](https://docs.relayapp.im/guides/long-polling) for backoff, the one-poller
+rule, and `410` recovery.
+
+  
+
+  
+    > **Tip:**
+>       The fastest deployed path: the
+>       [Cloudflare Workers starter](https://docs.relayapp.im/integrations/cloudflare) ships these steps
+>       as a working backend.
+>
+
+    **Step 1: Register the webhook**
+
+```bash
+curl -sS -X POST "$RELAY_API_URL/v1/webhooks" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://agent.example/webhooks/relay",
+    "events": ["message.received"]
+  }'
+```
+
+Save `signing_secret`. Relay never returns it again.
+
+```json
+{
+  "webhook": {
+    "id": "wh_01JZWEBHOOK",
+    "url": "https://agent.example/webhooks/relay",
+    "events": ["message.received"],
+    "enabled": true,
+    "secret_prefix": "whsec_EXAMPL…",
+    "created_at": "2026-08-10T12:00:00.000Z",
+    "updated_at": "2026-08-10T12:00:00.000Z"
+  },
+  "signing_secret": "whsec_EXAMPLEKEYDONOTUSE0000000000000000"
+}
+```
+
+**Step 2: Verify and store the event**
+
+Relay signs the exact request body with Standard Webhooks headers.
+
+```bash
+npm install standardwebhooks
+```
+
+```ts
+import { Webhook } from "standardwebhooks";
+
+const rawBody = await request.text();
+const event = new Webhook(process.env.RELAY_SIGNING_SECRET!).verify(
+  rawBody,
+  {
+    "webhook-id": request.headers.get("webhook-id") ?? "",
+    "webhook-timestamp": request.headers.get("webhook-timestamp") ?? "",
+    "webhook-signature": request.headers.get("webhook-signature") ?? "",
+  },
+);
+```
+
+Store the event before returning `2xx`. Deduplicate on `event_id`.
+
+```json
+{
+  "event_id": "evt_01JZE9M2XW",
+  "event_type": "message.received",
+  "data": {
+    "message": {
+      "id": "msg_01JZM3T8AH",
+      "conversation_id": "cnv_01JZC7K4RQ",
+      "sequence": 1,
+      "parts": [
+        { "part_index": 0, "type": "text", "text": "What time works tomorrow?" }
+      ]
+    }
+  }
+}
+```
+
+**Step 3: Mark Read and reply**
+
+Mark the exact inbound message Read before model or tool work. This
+call also starts the independent typing signal.
+
+```bash
+curl -sS -X POST \
+  "$RELAY_API_URL/v1/conversations/cnv_01JZC7K4RQ/responding" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message_id":"msg_01JZM3T8AH"}'
+```
+
+Derive the idempotency key from the inbound `event_id`.
+
+```bash
+curl -sS -X POST "$RELAY_API_URL/v1/messages" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: reply-evt_01JZE9M2XW" \
+  -d '{
+    "conversation_id": "cnv_01JZC7K4RQ",
+    "parts": [{ "type": "text", "text": "Tomorrow at 2:00 PM works." }]
+  }'
+```
+
+Relay returns `202 Accepted` with a `messages` array; this single
+text part stores one message. Stop typing after send, failure, or
+cancellation:
+
+```bash
+curl -sS -X POST \
+  "$RELAY_API_URL/v1/conversations/cnv_01JZC7K4RQ/typing" \
+  -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"started":false}'
+```
+
+In a group, copy `data.invocation_id` into `/responding`, typing, and
+the reply.
+
+  
+
+## Failure and retry behavior
+
+| Failure                                 | What to do                                        |
+| --------------------------------------- | ------------------------------------------------- |
+| Invalid signature                       | Return `401`. Do not parse or process the event   |
+| Duplicate `event_id`                    | Return `2xx`. Do not run side effects again       |
+| Relay returns `429` or `5xx`            | Retry with backoff and the same `Idempotency-Key` |
+| Relay returns another `4xx`             | Fix the request or token before retrying          |
+| Your handler needs more than 10 seconds | Store the event, return `2xx`, then continue work |
+
+> **Tip:**
+>   Want a coding agent to build the handler? Copy the
+>   [prompt on the home page](/#start-with-your-coding-agent), or hand it the
+>   [machine-readable contract](https://docs.relayapp.im/reference/machine-readable).
 
 ## Next steps
 
-* [Webhooks, for verification, retries, and rotation](https://docs.relayapp.im/guides/webhooks)
-* [Sending messages, for every part type](https://docs.relayapp.im/guides/sending-messages)
-* [Streaming replies](https://docs.relayapp.im/guides/streaming)
-* [Errors](https://docs.relayapp.im/reference/errors)
+* [Long polling](https://docs.relayapp.im/guides/long-polling) for the durable poll loop
+* [Webhooks](https://docs.relayapp.im/guides/webhooks) for signature rotation and delivery retries
+* [Sending messages](https://docs.relayapp.im/guides/sending-messages) for every part type
+* [Group conversations](https://docs.relayapp.im/guides/group-conversations) for `invocation_id`
+* [Errors](https://docs.relayapp.im/reference/errors) for every retry rule
 
 
 ---
 
-> ## Agent Instructions
-> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
-> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
-> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
-> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
-> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
-
 # Create and connect an agent
 
-> Create an agent in Relay, connect its backend, and control who can install it.
+> Create an agent in Relay, connect its backend with an Agent Token, and control who can install it.
+
+Create an agent in Relay, point your backend at it with the Agent Token, and
+choose who can find and install it.
 
 ## Create the agent
 
-In Relay, tap **New Message**, then **Create Agent**. Enter a display name and
-handle. Those are the only creation fields.
+Use either path:
 
-| Rule                | Detail                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| Handle format       | 3 to 32 lowercase letters, numbers, or underscores, starting with a letter              |
-| Reserved handles    | Product and legal route names such as `dashboard`, `mac`, `privacy`, `support`, `terms` |
-| Starting visibility | Private, until the owner changes it                                                     |
-| On creation         | Relay installs the agent for its creator and opens its direct conversation              |
-| Agent Token         | Displayed once at creation and never shown again                                        |
+  
+    Tap **New Message**, then **Create Agent**. Enter a display name and handle.
+  
 
-> **Info:**
->   Creation never asks for a tagline, accent color, model, personality, prompt,
->   backend URL, or hosting provider.
+  
+    Tell `@relay` the agent's name and what it should do. It derives the handle
+    and creates a private agent.
+
+    `@relay` can also list your agents and stage profile updates. An update
+    applies only after you confirm the exact change.
+  
+
+Both paths install the new agent and create its direct conversation.
+
+| Rule                | Detail                                                                                                                                                                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Handle format       | 3 to 32 lowercase letters, numbers, or underscores, starting with a letter. New handles cannot end with an underscore or repeat underscores; handles created before this rule keep working                                                                        |
+| Reserved handles    | Product and legal route names such as `dashboard`, `mac`, `privacy`, `support`, `terms`, and impersonation words such as `everyone`, `moderator`, `verified`. Lookalikes that swap in digits or pad with underscores (`re1ay`, `adm1n`, `r_elay`) are refused too |
+| Starting visibility | Private, until the owner changes it                                                                                                                                                                                                                               |
+| On creation         | Relay installs the agent for its creator and creates its direct conversation                                                                                                                                                                                      |
+| Agent Token         | Displayed once at creation and never shown again                                                                                                                                                                                                                  |
+
+Creation does not configure a model, prompt, backend, or hosting provider.
+Those stay in your own runtime.
 
 ### Richer creation through the API
 
-An authenticated owner can set richer presentation fields in the same request
-with `POST /v1/me/agents`.
+An authenticated owner sets richer presentation fields in the same request with
+`POST /v1/me/agents`.
 
 | Field                                 | Accepts                                                 |
 | ------------------------------------- | ------------------------------------------------------- |
@@ -314,12 +360,14 @@ curl -sS "$RELAY_API_URL/v1/me/agents/$AGENT_ID/configuration" \
 Send `{"openingMessage": null}` to `PATCH .../configuration` to disable the
 opening message for future installs.
 
-> **Warning:**
+> **Info:**
 >   These endpoints use the owner's Relay session, not the Agent Token.
 
-An opening message is sent as the agent when a user first installs it, and only
-then. Reinstalling, changing visibility, or changing distribution policy never
-sends it again, and updating it affects future first installs only.
+The opening message follows three rules:
+
+* **Sends once** as the agent, when a user first installs it.
+* **Stays silent** on reinstall, visibility change, and distribution-policy change.
+* **Applies forward** after an edit, to future first installs only.
 
 ## Connect the backend
 
@@ -331,12 +379,15 @@ curl -sS "$RELAY_API_URL/v1/agents/me" \
   -H "Authorization: Bearer $RELAY_AGENT_TOKEN"
 ```
 
+No backend yet? The [Cloudflare Workers starter](https://docs.relayapp.im/integrations/cloudflare)
+deploys a complete signed-webhook backend you customize afterwards.
+
 ## Profile and distribution
 
 Every public or unlisted handle owns a profile at `relayapp.im/handle` carrying
 display identity only.
 
-> **Warning:**
+> **Info:**
 >   Agent Tokens, owner identity, prompts, model and provider choices, runtime
 >   details, backend configuration, and opening-message configuration are never part
 >   of a public profile.
@@ -383,6 +434,7 @@ Relay accepts a backend message only while both of these hold:
 ## Next steps
 
 * [Quickstart](https://docs.relayapp.im/quickstart) to receive and reply to the first message
+* [Build your own agent](https://docs.relayapp.im/guides/build-your-own-agent) for a laptop long-poll example
 * [Authentication](https://docs.relayapp.im/authentication) for token storage and rotation
 * [Conversation lifecycle](https://docs.relayapp.im/guides/conversation-lifecycle)
 * [Developer data access and retention](https://docs.relayapp.im/reference/data-and-permissions)
@@ -390,20 +442,12 @@ Relay accepts a backend message only while both of these hold:
 
 ---
 
-> ## Agent Instructions
-> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
-> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
-> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
-> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
-> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
-
 # Authentication
 
 > Authenticate requests, verify identity, and rotate credentials.
 
-Set `RELAY_AGENT_TOKEN` in your server environment.
+Every Relay request carries one Agent Token as a bearer credential. Set
+`RELAY_AGENT_TOKEN` in your server environment.
 
 ```bash
 curl -sS "https://api.relayapp.im/v1/agents/me" \
@@ -414,10 +458,10 @@ curl -sS "https://api.relayapp.im/v1/agents/me" \
 
 ## Store and rotate
 
-* Keep it in a secret manager or environment variable.
-* Keep it out of source code, logs, and URLs.
-* On `401 unauthorized`, update the token before retrying.
-* If a token leaks, rotate it from the agent profile and redeploy. Rotation revokes the previous token immediately.
+* **Store the token** in a secret manager or an environment variable.
+* **Keep it out of** source code, logs, and URLs.
+* **Update the token** before retrying a `401 unauthorized`.
+* **Rotate from the agent profile** if a token leaks, then redeploy. Rotation revokes the previous token immediately.
 
 ## Next steps
 

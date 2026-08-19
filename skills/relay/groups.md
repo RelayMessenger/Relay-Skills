@@ -1,14 +1,5 @@
 <!-- Generated from the canonical Relay docs at docs.relayapp.im; regenerate with build-skill.py rather than editing by hand. -->
 
-> ## Agent Instructions
-> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
-> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
-> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
-> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
-> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
-
 # Group conversations
 
 > Receive explicit invocations in a group, reply to them, and follow membership changes.
@@ -16,6 +7,11 @@
 An agent added to a group receives only the messages that invoke it, plus its
 own replies. It never receives the rest of the conversation, including anything
 the group said before the agent was added.
+
+Reading history does not widen that scope. `GET
+/v1/conversations/{id}/messages` returns the same invocation-scoped set, so
+there is no route to the group transcript. See [conversation
+history](https://docs.relayapp.im/guides/conversation-history).
 
 ```mermaid
 flowchart TB
@@ -40,7 +36,7 @@ usual message envelope.
   "event_type": "message.received",
   "agent_id": "agt_01JZRELAY",
   "data": {
-    "invocation_id": "inv_01JZC7INVOKE",
+    "invocation_id": "ivk_01k1m4q9vn2r7t9b4c6qdh8xwy",
     "message": {
       "id": "msg_01JZM3T8AH",
       "conversation_id": "cnv_01JZC7K4RQ",
@@ -59,8 +55,7 @@ reply is rejected without it.
 
 ## Reply to an invocation
 
-Reply as you would in a direct conversation, and pass the `invocation_id`
-through.
+Reply as you would in a direct conversation, and pass the `invocation_id` back.
 
 ```bash
 curl -sS -X POST "$RELAY_API_URL/v1/messages" \
@@ -69,7 +64,7 @@ curl -sS -X POST "$RELAY_API_URL/v1/messages" \
   -H "Idempotency-Key: reply-evt_01JZE9M2XW" \
   -d '{
     "conversation_id": "cnv_01JZC7K4RQ",
-    "invocation_id": "inv_01JZC7INVOKE",
+    "invocation_id": "ivk_01k1m4q9vn2r7t9b4c6qdh8xwy",
     "parts": [{ "type": "text", "text": "Thursday after 4pm works for everyone." }]
   }'
 ```
@@ -78,7 +73,7 @@ A streaming reply carries it as a **query parameter**, not a body field:
 
 ```bash
 curl -sS -X POST \
-  "$RELAY_API_URL/v1/messages?stream=true&conversation_id=cnv_01JZC7K4RQ&invocation_id=inv_01JZC7INVOKE" \
+  "$RELAY_API_URL/v1/messages?stream=true&conversation_id=cnv_01JZC7K4RQ&invocation_id=ivk_01k1m4q9vn2r7t9b4c6qdh8xwy" \
   -H "Authorization: Bearer $RELAY_AGENT_TOKEN" \
   -H "Idempotency-Key: reply-evt_01JZE9M2XW" \
   -H "Content-Type: text/event-stream" \
@@ -87,7 +82,18 @@ curl -sS -X POST \
 ```
 
 An invocation is consumed once. Reuse the same `Idempotency-Key` to retry a
-reply safely; do not reuse the `invocation_id` for a second, different message.
+reply safely. Never reuse the `invocation_id` for a second, different message.
+
+Relay creates an invocation in three cases:
+
+* The sender names your agent in `invoked_agent_ids`.
+* The sender replies to your agent's active message.
+* A human text part [mentions your agent](https://docs.relayapp.im/guides/sending-messages).
+
+All three arrive as `message.received` with a `data.invocation_id`. A
+mention uses `method: "mention"`. When the invoking send committed several
+messages, every one of those events carries the same `invocation_id`; reply
+once, it stays single-use.
 
 ### Invocation errors
 
@@ -110,16 +116,25 @@ Relay emits these to every active group agent.
 | `conversation.updated` | A human renames the group or changes its avatar |
 | `conversation.removed` | A human removes your agent                      |
 
-Each payload carries `conversation_id`, the human `actor`, the affected
-participant when the mutation targets one, the current `membership_version`, a
-`system_mutation` with old and new values, and the system `message`. Full
-payloads are in [event types](https://docs.relayapp.im/reference/events).
+Each payload carries these fields:
+
+| Field                  | Contents                                                |
+| ---------------------- | ------------------------------------------------------- |
+| `conversation_id`      | The group the change happened in                        |
+| `actor`                | The human who made the change                           |
+| `affected_participant` | The targeted participant, when the mutation targets one |
+| `membership_version`   | The current membership version                          |
+| `system_mutation`      | The change, with old and new values                     |
+| `message`              | The system message stored in the conversation           |
+
+Full payloads are in [event types](https://docs.relayapp.im/reference/events).
 
 ## Propose a group
 
-`POST /v1/groups/invites` commits one consent card into each target's direct
-conversation with your agent. Every target must have your agent added, and each
-person answers for themselves.
+`POST /v1/groups/invites` commits the invite into each target's direct
+conversation with your agent: a text message carrying the `reason` when one
+was given, then the consent card message. Every target must already have your
+agent added. Each person answers for themselves.
 
 ```bash
 curl -sS -X POST "$RELAY_API_URL/v1/groups/invites" \
@@ -133,9 +148,10 @@ curl -sS -X POST "$RELAY_API_URL/v1/groups/invites" \
   }'
 ```
 
-The first accept creates the conversation and puts that person in it beside
-your agent. Every later accept joins the same conversation right away, and the
-invite stays open for whoever has not answered yet.
+* **The first accept** creates the conversation and puts that person in it
+  beside your agent.
+* **Every later accept** joins the same conversation right away.
+* **The invite stays open** for whoever has not answered yet.
 
 | Invite `state` | Meaning                                                 | Conversation                                                                               |
 | -------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -152,7 +168,7 @@ invite stays open for whoever has not answered yet.
 
 Read one member's `state` to know whether that person is in the conversation. A
 `conversation_id` on a `pending` invite names the destination group your agent
-proposed into, so it tells you where the invite leads rather than who consented.
+proposed into. It tells you where the invite leads, not who consented.
 
 | Event                    | Emitted when                                                |
 | ------------------------ | ----------------------------------------------------------- |
@@ -175,7 +191,7 @@ proposed into, so it tells you where the invite leads rather than who consented.
 | Agents required per group       | At least 1                          |
 | Invocation stream claim         | 5 minutes                           |
 
-## What people do, and what backends cannot
+## Who does what
 
 Group creation and membership are first-party app actions, authenticated with a
 person's Relay session. There is no Agent Token route for them.
@@ -204,15 +220,6 @@ person's Relay session. There is no Agent Token route for them.
 
 ---
 
-> ## Agent Instructions
-> The Relay API base URL is https://api.relayapp.im. Never use workers.dev origins.
-> The contract is raw HTTPS and JSON at https://api.relayapp.im. Optional published packages: @relaymessenger/cli and @relaymessenger/vercel-ai. Import nothing else.
-> Every POST /v1/messages requires an Idempotency-Key header. Derive it from the inbound event_id so retries cannot duplicate a reply.
-> Verify webhooks with the Standard Webhooks signature over the exact raw request body before parsing it.
-> Webhooks and long polling are mutually exclusive per Agent Token. Polling while a webhook is enabled returns 409 conflict.
-> In group conversations, reply with the invocation_id from the triggering event. One invocation produces exactly one agent message.
-> Group membership grants no transcript access. Only explicit invocations reach an agent backend.
-
 # Conversation lifecycle
 
 > Follow a direct conversation from install through removal, return, and recovery.
@@ -232,7 +239,9 @@ stateDiagram-v2
 
 ## How a conversation begins
 
-Relay creates or reuses the direct conversation when a user installs the agent. When that user sends a message, the agent receives `message.received` with the stable `conversation_id`:
+Relay creates or reuses the direct conversation when a user installs the agent.
+When that user sends a message, the agent receives `message.received` with the
+stable `conversation_id`:
 
 ```json
 {
@@ -247,22 +256,26 @@ Relay creates or reuses the direct conversation when a user installs the agent. 
 }
 ```
 
-Store the ID and pass it back unchanged when sending, typing, marking read, or reading history.
+Store the ID and pass it back unchanged when sending, responding, typing,
+marking Read, or reading history.
 
 ## Active conversation
 
-A direct conversation contains one user and one agent. Relay serializes its messages with a dense, increasing `sequence`.
+A direct conversation contains one user and one agent. Relay serializes its
+messages with a dense, increasing `sequence`.
 
-Relay checks both conversation membership and the user's active installation before accepting a send. A `403 forbidden` response here usually means the agent is no longer a participant or installed.
+Relay checks conversation membership and the user's active installation before
+accepting a send. A `403 forbidden` here means one of two things: the agent is
+no longer a participant, or it is no longer installed for that user.
 
 ## Remove and return
 
-| Action                   | Effect on the conversation                                                                                                                           |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Remove an ordinary agent | The installation ends; the backend can no longer add messages                                                                                        |
-| Add the agent again      | Relay reuses the existing direct conversation, never a second one                                                                                    |
-| Block any agent          | Removes the active installation, including for a required built-in agent, and suppresses required-distribution reconciliation while the block exists |
-| Built-in **Relay** agent | Has no ordinary Remove action                                                                                                                        |
+| Action                   | Effect on the conversation                                                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Remove an ordinary agent | The installation ends; the backend can no longer add messages                                                                                              |
+| Add the agent again      | Relay reuses the existing direct conversation, never a second one                                                                                          |
+| Block any agent          | Removes the active installation, including for a required agent such as @relay, and suppresses required-distribution reconciliation while the block exists |
+| Built-in **Relay** agent | Has no ordinary Remove action                                                                                                                              |
 
 ## Recover the thread
 
@@ -276,10 +289,10 @@ After a restart or an uncertain webhook attempt, rebuild from
 keeps receiving new events automatically.
 
 > **Note:**
->   Conversation listing, backend-created conversations, and agent-initiated group
->   management are not available in the current developer preview. Groups
->   themselves are live: people create them in the app, and your backend receives
->   invocations and lifecycle events. See [API availability](https://docs.relayapp.im/roadmap).
+>   Agents can list conversations they participate in with
+>   `GET /v1/conversations`. Backends cannot create conversations or change group
+>   membership. People create groups in the app. Your backend receives invocations
+>   and lifecycle events. See [API availability](https://docs.relayapp.im/roadmap).
 
 ## Next steps
 

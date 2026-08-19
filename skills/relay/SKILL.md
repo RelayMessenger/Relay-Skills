@@ -22,8 +22,8 @@ description: >
   reaction.added, conversation.added, invocation_id, idempotency-key,
   idempotent send, POST /v1/messages, /v1/webhooks, /v1/events, long polling,
   cursor, UIMessageStream, vercel ai sdk, stream=true, typed parts, text part,
-  data part, media part, voice memo, link preview, quick replies, suggestions,
-  tapback, read receipt, typing
+  data part, media part, voice memo, link preview, contact card, split at
+  ingest, tapback, read receipt, typing
   indicator, group conversation, group invocation, conversation history,
   attachment upload, capability url, rate limit, 429, 202 accepted,
   agent-to-user messaging, consumer messaging channel, imessage-style agent.
@@ -42,15 +42,15 @@ notifications, media transport, installation, and safety; you own the model,
 prompts, tools, memory, and hosting. One Agent
 Token authenticates `https://api.relayapp.im`, and events arrive by signed
 webhook or long polling. The contract is raw HTTPS and JSON. Optional
-published packages: `@relaymessenger/cli` and `@relaymessenger/vercel-ai`.
-Import nothing else.
+published packages: `@relaymessenger/sdk`, `@relaymessenger/cli`, and
+`@relaymessenger/vercel-ai`. Import nothing else.
 
 ## How this skill is organized
 
 | File | Covers |
 | --- | --- |
 | `getting-started.md` | The quickstart loop, creating and connecting an agent, Agent Token auth and rotation |
-| `messages.md` | Ordered typed parts, attachments, voice memos, link previews, quick replies, reactions |
+| `messages.md` | Ordered typed parts, split-at-ingest send behavior, attachments, voice memos, link previews, contact cards, reactions |
 | `streaming.md` | Piping a Vercel AI SDK UIMessageStream v1 into one canonical message; typing indicators |
 | `events-and-delivery.md` | The delivery model, signed webhooks, long polling, every event payload, receipts, history recovery, identifying users |
 | `groups.md` | Group conversations, the invocation boundary, `invocation_id` replies, conversation lifecycle |
