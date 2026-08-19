@@ -514,15 +514,14 @@ the event:
     "part_index": null,
     "type": "emoji",
     "emoji": "❤️",
-    "actor": { "kind": "contact", "id": "agt_01JZRELAY" },
+    "actor": { "kind": "agent", "id": "agt_01JZRELAY" },
     "operation": "add"
   }
 }
 ```
 
-`part_index` is always present, and null on a whole-message reaction. In this
-payload `actor.kind` is `user` or `contact`, where `contact` names an agent.
-That is the stored actor kind, not the `agent` spelling a message `sender`
+`part_index` is always present, and null on a whole-message reaction.
+`actor.kind` is `user` or `agent`, the same two values a message `sender`
 carries.
 
 | Case                                              | Result                                            |

@@ -463,8 +463,7 @@ A participant added or removed a reaction from the agent's message.
 A reaction targets a message id, and `type` is always `"emoji"`. `part_index`
 is always present: it names the part when the reaction anchors on one part of
 a media message, and is null on a whole-message reaction, the only shape for
-text and card messages. `actor.kind` is `user` or `contact`, where `contact`
-names an agent.
+text and card messages. `actor.kind` is `user` or `agent`.
 
 ### `conversation.added`, `conversation.updated`, and `conversation.removed`
 

@@ -10,7 +10,7 @@ description: >
   /v1/messages), creating and connecting an agent, Agent Token auth and
   rotation, sending ordered typed parts (text, media, voice_memo,
   link_preview, data), attachments, streaming a Vercel AI SDK UIMessageStream
-  v1 into one canonical message, typing indicators, reactions and tapbacks,
+  v1 into one or more finished messages, typing indicators, reactions and tapbacks,
   delivery and read receipt watermarks, Standard Webhooks signature verification and
   secret rotation, durable long polling with cursors, group conversations and
   invocation_id replies, conversation history recovery, identifying users,
@@ -51,7 +51,7 @@ published packages: `@relaymessenger/sdk`, `@relaymessenger/cli`, and
 | --- | --- |
 | `getting-started.md` | The quickstart loop, creating and connecting an agent, Agent Token auth and rotation |
 | `messages.md` | Ordered typed parts, split-at-ingest send behavior, attachments, voice memos, link previews, contact cards, reactions |
-| `streaming.md` | Piping a Vercel AI SDK UIMessageStream v1 into one canonical message; typing indicators |
+| `streaming.md` | Piping a Vercel AI SDK UIMessageStream v1 into one or more finished messages; typing indicators |
 | `events-and-delivery.md` | The delivery model, signed webhooks, long polling, every event payload, receipts, history recovery, identifying users |
 | `groups.md` | Group conversations, the invocation boundary, `invocation_id` replies, conversation lifecycle |
 | `limits-and-errors.md` | Every size/rate limit, error codes and retry guidance, data access boundaries, the availability matrix |
@@ -65,8 +65,9 @@ published packages: `@relaymessenger/sdk`, `@relaymessenger/cli`, and
 3. Relay POSTs signed `message.received` events; verify the Standard Webhooks
    signature, deduplicate on `event_id`, return `2xx` fast.
 4. Reply with `POST /v1/messages`, deriving `Idempotency-Key` from the
-   inbound `event_id` so retries can never double-send. Relay returns
-   `202 Accepted` with the canonical message.
+   inbound `event_id` so retries can never double-send. Relay splits the parts
+   at ingest, so the `202 Accepted` response is always a `messages` array
+   listing every committed message in display order.
 
 Always read `getting-started.md` first; it contains the complete runnable
 quickstart. The live documentation mirror of this skill is
