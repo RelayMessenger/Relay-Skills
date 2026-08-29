@@ -1,76 +1,43 @@
 ---
 name: relay
-description: >
-  Build AI agents people message like contacts, with Relay, the messenger for AI agents. Your backend keeps its own
-  model, tools, and hosting; Relay owns the consumer app, profiles,
-  conversations, delivery, media, and safety. The integration is plain HTTPS
-  and JSON against https://api.relayapp.im with one Agent Token.
-  Use this skill for any Relay question: quickstart (register a signed
-  webhook, receive message.received, reply with an idempotent POST
-  /v1/messages), creating and connecting an agent, Agent Token auth and
-  rotation, sending ordered typed parts (text, media, voice_memo,
-  link_preview, data), attachments, streaming a Vercel AI SDK UIMessageStream
-  v1 into one or more finished messages, typing indicators, reactions and tapbacks,
-  delivery and read receipt watermarks, Standard Webhooks signature verification and
-  secret rotation, durable long polling with cursors, group conversations and
-  invocation_id replies, conversation history recovery, identifying users,
-  rate limits and size limits, error codes, and the developer-preview
-  availability matrix.
-  Keywords: relay, relayapp, relay api, ai agent messenger, agent inbox,
-  message agent, agent token, rly_live, webhook, standard webhooks,
-  webhook-signature, message.received, message.delivered, message.read,
-  reaction.added, conversation.added, invocation_id, idempotency-key,
-  idempotent send, POST /v1/messages, /v1/webhooks, /v1/events, long polling,
-  cursor, UIMessageStream, vercel ai sdk, stream=true, typed parts, text part,
-  data part, media part, voice memo, link preview, contact card, split at
-  ingest, tapback, read receipt, typing
-  indicator, group conversation, group invocation, conversation history,
-  attachment upload, capability url, rate limit, 429, 202 accepted,
-  agent-to-user messaging, consumer messaging channel, imessage-style agent.
-license: MIT
-metadata:
-  author: relaymessenger
-  version: "1.0.0"
+description: Use when implementing, debugging, or reviewing a Relay agent, messaging backend, webhook receiver, WebSocket consumer, or Relay API/TypeScript SDK integration.
 ---
 
-# Relay
+# Relay v1
 
-Relay is the messenger for AI agents: people add an agent like a contact,
-message it in a durable conversation, and your backend answers over plain
-HTTPS. Relay owns identity, profiles, conversations, ordering, delivery, sync,
-notifications, media transport, installation, and safety; you own the model,
-prompts, tools, memory, and hosting. One Agent
-Token authenticates `https://api.relayapp.im`, and events arrive by signed
-webhook or long polling. The contract is raw HTTPS and JSON. Optional
-published packages: `@relaymessenger/sdk`, `@relaymessenger/cli`, and
-`@relaymessenger/vercel-ai`. Import nothing else.
+Use the current Relay contract rather than remembered examples.
 
-## How this skill is organized
+1. Read `https://docs.relayapp.im/llms.txt` and the relevant guide.
+2. Read the current OpenAPI at `https://docs.relayapp.im/api-reference/openapi.json` or the repository contract when available.
+3. Prefer `@relayapp/sdk` for TypeScript; show equivalent cURL when teaching an HTTP operation.
+4. Keep Agent Tokens in trusted backend storage.
+5. Use `Idempotency-Key` or `message.idempotency_key` for retryable Message sends.
+6. Treat every received `event_id` as at-least-once delivery and deduplicate before side effects.
 
-| File | Covers |
-| --- | --- |
-| `getting-started.md` | The quickstart loop, creating and connecting an agent, Agent Token auth and rotation |
-| `messages.md` | Ordered typed parts, split-at-ingest send behavior, attachments, voice memos, link previews, contact cards, reactions |
-| `streaming.md` | Piping a Vercel AI SDK UIMessageStream v1 into one or more finished messages; typing indicators |
-| `events-and-delivery.md` | The delivery model, signed webhooks, long polling, every event payload, receipts, history recovery, identifying users |
-| `groups.md` | Group conversations, the invocation boundary, `invocation_id` replies, conversation lifecycle |
-| `limits-and-errors.md` | Every size/rate limit, error codes and retry guidance, data access boundaries, the availability matrix |
+## Core model
 
-## The core loop
+Relay uses Contacts, Handles, Chats, Messages, parts, Attachments, reactions,
+and per-recipient delivery state. A Contact has `kind: "user" | "agent"`.
 
-1. A person creates the agent in Relay (**New Message → Create Agent**) and
-   copies the Agent Token, shown exactly once.
-2. Your backend registers a webhook: `POST /v1/webhooks` returns the signing
-   secret once.
-3. Relay POSTs signed `message.received` events; verify the Standard Webhooks
-   signature, deduplicate on `event_id`, return `2xx` fast.
-4. Reply with `POST /v1/messages`, deriving `Idempotency-Key` from the
-   inbound `event_id` so retries can never double-send. Relay splits the parts
-   at ingest, so the `202 Accepted` response is always a `messages` array
-   listing every committed message in display order.
+For details, read only the reference needed:
 
-Always read `getting-started.md` first; it contains the complete runnable
-quickstart. The live documentation mirror of this skill is
-<https://docs.relayapp.im>; every page also serves raw Markdown by appending
-`.md`, the whole site is at `/llms-full.txt`, and an MCP docs-search server
-runs at `https://docs.relayapp.im/mcp`.
+- [Messaging](references/messaging.md) for sends, parts, Attachments, replies,
+  reactions, mentions, and receipts.
+- [Chats and Contacts](references/chats-and-contacts.md) for groups,
+  membership periods, blocks, Contact Cards, and history.
+- [Agent events](references/agent-events.md) for Webhooks, WebSocket, ACK,
+  FULL sync, typing, retries, and `trace_id`.
+
+## Verification
+
+Prove the integration at its real boundaries:
+
+- signature verification over raw webhook bytes;
+- durable event commit before webhook `2xx` or WebSocket ACK;
+- duplicate `event_id` handling;
+- idempotent REST replies;
+- reconnect/replay and FULL-sync behavior for WebSocket consumers;
+- direct and group Message behavior relevant to the product.
+
+Report unsupported or unproved behavior as `unknown` rather than inventing a
+route, field, resource, package, or migration.
