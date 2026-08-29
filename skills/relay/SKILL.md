@@ -9,7 +9,7 @@ Use the current Relay contract rather than remembered examples.
 
 1. Read `https://docs.relayapp.im/llms.txt` and the relevant guide.
 2. Read the current OpenAPI at `https://docs.relayapp.im/api-reference/openapi.json` or the repository contract when available.
-3. Prefer `@relayapp/sdk` for TypeScript; show equivalent cURL when teaching an HTTP operation.
+3. Prefer `@relaymessenger/sdk` for TypeScript; show equivalent cURL when teaching an HTTP operation.
 4. Keep Agent Tokens in trusted backend storage.
 5. Use `Idempotency-Key` or `message.idempotency_key` for retryable Message sends.
 6. Treat every received `event_id` as at-least-once delivery and deduplicate before side effects.
