@@ -12,15 +12,24 @@ Each event envelope contains:
 
 ## Webhooks
 
+At least one saved webhook subscription selects Webhook delivery. Creating the
+first subscription closes connected agent sockets and drains pending events to
+Webhooks without changing `event_id`.
+
 Verify Standard Webhooks over the exact raw request body. Persist the envelope
 under a unique `event_id`, commit, then return `2xx`. Process model work and
 REST replies afterward.
 
 Relay makes one initial attempt plus up to ten retries. Retryable outcomes are
 network failures, `429`, and `5xx`, with a 10-second response window and
-exponential backoff capped at ten minutes. Operators can redrive a dead event
-from Console for 72 hours. Terminal delivery rows remain in PostgreSQL for 30
-days.
+delays of `2s`, `4s`, `8s`, `16s`, `32s`, `64s`, `128s`, `256s`, `512s`,
+and `600s`. Operators can redrive a dead event from Console for 72 hours.
+Terminal delivery rows remain in PostgreSQL for 30 days.
+
+Treat redirects as terminal and never follow them. Reject destinations that
+resolve to localhost, private, link-local, or cloud metadata addresses at
+delivery time. Webhook retries can repeat an `event_id`, so duplicate
+acceptance must not repeat side effects.
 
 ## WebSocket
 
@@ -28,15 +37,36 @@ Connect to `wss://api.relayapp.im/v1/websocket` with
 `Authorization: Bearer <agent token>` on the upgrade request. Relay delivers the
 same event envelope inside sequenced event frames.
 
+WebSocket is the path when the agent has no saved webhook subscriptions. A
+subscription makes the upgrade return HTTP `409`. There is no mode, toggle, or
+WebSocket setting.
+
 Persist and process each event idempotently, then send cumulative ACK through
-the highest consecutive sequence durably accepted. Webhooks and WebSocket are
-mutually exclusive for one agent; pending event IDs transfer with the selected
-transport.
+the highest consecutive sequence durably accepted. Multiple sockets for one
+agent share one checkpoint.
 
 When Relay sends `full_sync`, rebuild canonical state through paginated REST
 Chat and Message reads. Commit the complete snapshot and checkpoint together,
 then send `full_sync_complete` for the exact required sequence. Resume event
 ACKs after that commit.
+
+Relay sends a ping every 30 seconds and closes the socket after 60 seconds
+without a pong. The shared `/v1/websocket` path also serves users;
+authentication determines the Contact kind. Public developer integrations use
+an Agent Token.
+
+Use the SDK socket directly for local development. The `relay listen` command
+is deleted.
+
+## Path changes
+
+Deleting the last webhook subscription drains pending events to WebSocket.
+Creating the first drains them to Webhooks and closes all agent sockets. Relay
+never sends one event through both paths.
+
+If no subscription and no socket exists, events wait durably. Pending and
+terminal event delivery state remains available for 30 days. Path changes
+preserve `event_id`.
 
 ## Typing
 

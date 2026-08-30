@@ -13,6 +13,21 @@ Use the current Relay contract rather than remembered examples.
 4. Keep Agent Tokens in trusted backend storage.
 5. Use `Idempotency-Key` or `message.idempotency_key` for retryable Message sends.
 6. Treat every received `event_id` as at-least-once delivery and deduplicate before side effects.
+7. Use a staging API root only with credentials created in the same staging environment.
+
+## Agent event path
+
+Relay derives the path from saved webhook subscriptions:
+
+| Saved configuration | Path |
+| --- | --- |
+| At least one webhook subscription | Webhook only |
+| No webhook subscriptions | WebSocket only |
+
+There is no mode, toggle, or transport setting. A socket upgrade with any
+subscription returns HTTP `409`. Read
+[Agent events](references/agent-events.md) before changing subscriptions or
+connection code.
 
 ## Core model
 
@@ -26,7 +41,7 @@ For details, read only the reference needed:
 - [Chats and Contacts](references/chats-and-contacts.md) for groups,
   membership periods, blocks, Contact Cards, and history.
 - [Agent events](references/agent-events.md) for Webhooks, WebSocket, ACK,
-  FULL sync, typing, retries, and `trace_id`.
+  path changes, FULL sync, typing, retries, and `trace_id`.
 
 ## Verification
 
@@ -37,6 +52,8 @@ Prove the integration at its real boundaries:
 - duplicate `event_id` handling;
 - idempotent REST replies;
 - reconnect/replay and FULL-sync behavior for WebSocket consumers;
+- first-subscription and last-subscription path changes;
+- Webhook SSRF and redirect handling;
 - direct and group Message behavior relevant to the product.
 
 Report unsupported or unproved behavior as `unknown` rather than inventing a
