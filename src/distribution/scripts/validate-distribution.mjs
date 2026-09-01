@@ -24,7 +24,7 @@ assert.ok(["codex", "cursor"].includes(host));
 assert.match(provenance.source_commit, /^[0-9a-f]{40}$/);
 assert.equal(
   provenance.source_repository,
-  "https://github.com/RelayMessenger/skills",
+  "https://github.com/RelayMessenger/Relay-Skills",
 );
 assert.equal(provenance.generator, "scripts/build-distribution.py");
 

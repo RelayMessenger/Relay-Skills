@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_REPOSITORY = "https://github.com/RelayMessenger/skills"
+SOURCE_REPOSITORY = "https://github.com/RelayMessenger/Relay-Skills"
 LOCK_SOURCE = ROOT / "skills" / "relay" / "references" / "relay-v1-lock.json"
 
 

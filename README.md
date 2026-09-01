@@ -10,7 +10,7 @@ Attachments, receipts, groups, Add requests, retries, and errors.
 ## Install the standalone skill
 
 ```bash
-npx skills add https://github.com/RelayMessenger/skills --skill relay
+npx skills add https://github.com/RelayMessenger/Relay-Skills --skill relay
 ```
 
 The repository is also a portable Agent Plugin and a Claude Code plugin. The
