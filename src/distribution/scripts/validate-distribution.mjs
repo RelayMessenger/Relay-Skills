@@ -138,6 +138,7 @@ for (const marker of [
   "POST /v1/contact_requests",
   "contactRequests.create",
   "relay.chats.messages.send",
+  "relayApiOrigin(process.env.RELAY_API_URL)",
 ]) {
   assert.ok(text.includes(marker), `missing locked marker: ${marker}`);
 }

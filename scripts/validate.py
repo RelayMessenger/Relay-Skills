@@ -75,6 +75,7 @@ required_markers = [
     "@relaymessenger/sdk@0.3.0-staging.4",
     "relay.chats.messages.send",
     "relay.chats.markAsRead",
+    "relayApiOrigin(process.env.RELAY_API_URL)",
     "unknown",
 ]
 for marker in required_markers:

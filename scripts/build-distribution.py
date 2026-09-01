@@ -50,17 +50,30 @@ def copy_tree(source: Path, target: Path) -> None:
     shutil.copytree(source, target, dirs_exist_ok=True, copy_function=shutil.copy2)
 
 
-def source_commit() -> str:
+def source_identity() -> tuple[str, str]:
     dirty = subprocess.check_output(
         ["git", "-C", str(ROOT), "status", "--porcelain"],
         text=True,
     )
     if dirty:
         raise SystemExit("Relay-Skills must be clean before generation")
-    return subprocess.check_output(
+    branch = subprocess.check_output(
+        ["git", "-C", str(ROOT), "symbolic-ref", "--short", "HEAD"],
+        text=True,
+    ).strip()
+    if branch != "staging":
+        raise SystemExit("Relay-Skills distributions must be generated from staging")
+    commit = subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
         text=True,
     ).strip()
+    branch_commit = subprocess.check_output(
+        ["git", "-C", str(ROOT), "rev-parse", "refs/heads/staging"],
+        text=True,
+    ).strip()
+    if commit != branch_commit:
+        raise SystemExit("Relay-Skills HEAD must equal refs/heads/staging")
+    return branch, commit
 
 
 def source_file_hashes(host: str) -> dict[str, str]:
@@ -121,7 +134,7 @@ def package_manifest(host: str, version: str) -> dict:
     return value
 
 
-def build(host: str, target: Path, commit: str) -> None:
+def build(host: str, target: Path, branch: str, commit: str) -> None:
     clear_target(target)
 
     version = json.loads(
@@ -179,7 +192,7 @@ def build(host: str, target: Path, commit: str) -> None:
         "schema_version": 1,
         "distribution": host,
         "source_repository": SOURCE_REPOSITORY,
-        "source_branch": "staging",
+        "source_branch": branch,
         "source_commit": commit,
         "generator": "scripts/build-distribution.py",
         "relay_v1_lock": lock,
@@ -194,8 +207,8 @@ def main() -> None:
     target = Path(args.target).expanduser().resolve()
     if target == ROOT or ROOT in target.parents:
         raise SystemExit("distribution target must be outside Relay-Skills")
-    commit = source_commit()
-    build(args.host, target, commit)
+    branch, commit = source_identity()
+    build(args.host, target, branch, commit)
     print(f"built Relay {args.host} distribution from {commit} into {target}")
 
 
