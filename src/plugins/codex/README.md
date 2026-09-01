@@ -9,6 +9,15 @@ This generated Codex plugin teaches the locked Relay v1 API and TypeScript SDK.
 
 ## Local install
 
+Use Codex CLI `0.152.0` for this staging candidate:
+
+```bash
+npm install --global @openai/codex@0.152.0
+codex --version
+```
+
+Then add the local marketplace and install Relay:
+
 ```bash
 codex plugin marketplace add /absolute/path/to/Relay-Codex
 codex plugin add relay@relay-plugin-marketplace

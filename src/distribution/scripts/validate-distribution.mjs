@@ -39,6 +39,7 @@ if (mode === "manifest") {
   assert.equal(packageJson.engines.node, ">=22.22.3");
 
   if (host === "codex") {
+    const readme = readFileSync(join(root, "README.md"), "utf8");
     const plugin = json("plugins/relay/.codex-plugin/plugin.json");
     const mcp = json("plugins/relay/.mcp.json");
     const marketplace = json(".agents/plugins/marketplace.json");
@@ -51,6 +52,8 @@ if (mode === "manifest") {
     assert.equal(marketplace.plugins[0].source.path, "./plugins/relay");
     assert.equal(marketplace.plugins[0].policy.installation, "AVAILABLE");
     assert.equal(marketplace.plugins[0].policy.authentication, "ON_INSTALL");
+    assert.match(readme, /Codex CLI `0\.152\.0`/);
+    assert.match(readme, /codex plugin add relay@relay-plugin-marketplace/);
   } else {
     const plugin = json(".cursor-plugin/plugin.json");
     const mcp = json("mcp.json");
