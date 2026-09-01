@@ -82,4 +82,21 @@ assert.deepEqual(observed, {
   },
 });
 
+let unsafeOriginFailure = "";
+try {
+  await run(process.execPath, ["examples/send-message/index.mjs"], {
+    env: {
+      ...process.env,
+      RELAY_API_URL: "http://example.com",
+      RELAY_AGENT_TOKEN: "must-not-leave-process",
+      RELAY_CHAT_ID: "chat-example",
+      RELAY_IDEMPOTENCY_KEY: "example-idempotency-key",
+    },
+  });
+} catch (error) {
+  unsafeOriginFailure = `${error.message}\n${error.stderr ?? ""}`;
+}
+assert.match(unsafeOriginFailure, /HTTPS; HTTP is loopback-only/);
+assert.doesNotMatch(unsafeOriginFailure, /must-not-leave-process/);
+
 console.log("verified current Relay SDK example request and response");

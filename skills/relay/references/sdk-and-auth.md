@@ -24,11 +24,26 @@ The locked package is `@relaymessenger/sdk@0.3.0-staging.4` and requires Node
 ```typescript
 import Relay from "@relaymessenger/sdk";
 
+function relayApiOrigin(value?: string): string {
+  const url = new URL(value?.trim() || "https://api.relayapp.im");
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  if (
+    url.username || url.password || url.pathname !== "/" || url.search || url.hash
+    || (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))
+  ) {
+    throw new Error("Relay API origin must be HTTPS; HTTP is loopback-only");
+  }
+  return url.origin;
+}
+
 const relay = new Relay({
   apiKey: process.env.RELAY_AGENT_TOKEN!,
-  baseURL: process.env.RELAY_API_URL ?? "https://api.relayapp.im",
+  baseURL: relayApiOrigin(process.env.RELAY_API_URL),
 });
 ```
+
+Validate the origin before constructing the SDK client. The SDK accepts a
+custom origin but does not enforce HTTPS for you.
 
 Use only the public resources exported by this version:
 
