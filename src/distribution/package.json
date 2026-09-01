@@ -8,9 +8,10 @@
     "examples/send-message"
   ],
   "scripts": {
-    "test": "npm run test:manifest && npm run test:content && npm run test:mcp && npm run test:package && npm run test:example",
+    "test": "npm run test:manifest && npm run test:content && npm run test:source && npm run test:mcp && npm run test:package && npm run test:example",
     "test:manifest": "node scripts/validate-distribution.mjs manifest",
     "test:content": "node scripts/validate-distribution.mjs content && node scripts/verify-contract-lock.mjs",
+    "test:source": "node scripts/verify-source-provenance.mjs",
     "test:mcp": "node scripts/test-mcp-search.mjs",
     "test:live": "node scripts/test-mcp-contract.mjs",
     "test:package": "node scripts/package-smoke.mjs",

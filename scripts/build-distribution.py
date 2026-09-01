@@ -20,10 +20,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("host", choices=("codex", "cursor"))
     parser.add_argument("target")
-    parser.add_argument(
-        "--source-commit",
-        help="Override the source commit recorded in provenance.",
-    )
     return parser.parse_args()
 
 
@@ -54,9 +50,13 @@ def copy_tree(source: Path, target: Path) -> None:
     shutil.copytree(source, target, dirs_exist_ok=True, copy_function=shutil.copy2)
 
 
-def source_commit(override: str | None) -> str:
-    if override:
-        return override
+def source_commit() -> str:
+    dirty = subprocess.check_output(
+        ["git", "-C", str(ROOT), "status", "--porcelain"],
+        text=True,
+    )
+    if dirty:
+        raise SystemExit("Relay-Skills must be clean before generation")
     return subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
         text=True,
@@ -147,6 +147,8 @@ def build(host: str, target: Path, commit: str) -> None:
         (host_source / "plugin.json").read_text(encoding="utf-8")
     )
     manifest["version"] = version
+    if (host_source / ".github").exists():
+        copy_tree(host_source / ".github", target / ".github")
 
     if host == "codex":
         plugin = target / "plugins" / "relay"
@@ -177,7 +179,7 @@ def build(host: str, target: Path, commit: str) -> None:
         "schema_version": 1,
         "distribution": host,
         "source_repository": SOURCE_REPOSITORY,
-        "source_branch": "dev",
+        "source_branch": "staging",
         "source_commit": commit,
         "generator": "scripts/build-distribution.py",
         "relay_v1_lock": lock,
@@ -192,7 +194,7 @@ def main() -> None:
     target = Path(args.target).expanduser().resolve()
     if target == ROOT or ROOT in target.parents:
         raise SystemExit("distribution target must be outside Relay-Skills")
-    commit = source_commit(args.source_commit)
+    commit = source_commit()
     build(args.host, target, commit)
     print(f"built Relay {args.host} distribution from {commit} into {target}")
 

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-skills-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.22.3
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: 0.8.13
+
+      - run: python3 scripts/validate.py
+      - run: scripts/validate-host-manifests.sh
+
+      - name: Generate and validate Codex and Cursor
+        run: |
+          CODEX="$(mktemp -d)"
+          CURSOR="$(mktemp -d)"
+          git -C "$CODEX" init --quiet
+          git -C "$CURSOR" init --quiet
+          python3 scripts/build-distribution.py codex "$CODEX"
+          python3 scripts/build-distribution.py cursor "$CURSOR"
+          src/plugins/codex/validate.sh "$CODEX"
+          src/plugins/cursor/validate.sh "$CURSOR"
+          for TARGET in "$CODEX" "$CURSOR"; do
+            (
+              cd "$TARGET"
+              npm install --no-package-lock
+              RELAY_SKILLS_SOURCE_DIR="$GITHUB_WORKSPACE" npm test
+              RELAY_DOCS_MCP_URL=https://docs.staging.relayapp.im/mcp \
+                npm run test:live
+            )
+          done

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import Relay from "@relaymessenger/sdk";
 
 const required = (name) => {
@@ -9,8 +8,7 @@ const required = (name) => {
 
 const chatId = required("RELAY_CHAT_ID");
 const text = process.env.RELAY_MESSAGE_TEXT?.trim() || "Hello from Relay.";
-const idempotencyKey =
-  process.env.RELAY_IDEMPOTENCY_KEY?.trim() || randomUUID();
+const idempotencyKey = required("RELAY_IDEMPOTENCY_KEY");
 
 const relay = new Relay({
   apiKey: required("RELAY_AGENT_TOKEN"),

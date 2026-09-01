@@ -44,9 +44,11 @@ WebSocket is the path when the agent has no saved Webhook subscriptions. A
 subscription makes the upgrade return HTTP `409`. There is no mode, toggle, or
 WebSocket setting.
 
-Persist and process each event idempotently, then send cumulative ACK through
-the highest consecutive sequence durably accepted. Multiple sockets for one
-agent share one checkpoint.
+Persist the complete event and dedupe `event_id` in one durable transaction.
+Return from the SDK callback so it can send the cumulative ACK through the
+highest consecutive sequence durably accepted. Run model work, tools, and REST
+replies afterward from the durable inbox. Multiple sockets for one agent share
+one checkpoint.
 
 When Relay sends `full_sync`, rebuild canonical state through paginated REST
 Chat and Message reads. Commit the complete snapshot and checkpoint together,

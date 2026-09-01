@@ -15,13 +15,19 @@ const relay = new Relay({
   baseURL: process.env.RELAY_API_URL ?? "https://api.relayapp.im",
 });
 
+// Mint this once for the logical operation and persist it before the request.
+const idempotencyKey = savedOperation.idempotencyKey;
+
 await relay.chats.messages.send(chatId, {
   message: {
     parts: [{ type: "text", value: "Hello from Relay." }],
-    idempotency_key: crypto.randomUUID(),
+    idempotency_key: idempotencyKey,
   },
 });
 ```
+
+Never mint the key inside a retry attempt. A retry after an unknown outcome
+must reuse the exact key and Message body from the prepared operation.
 
 A Message contains ordered `parts`:
 

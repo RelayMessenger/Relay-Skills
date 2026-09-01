@@ -7,8 +7,9 @@ This example uses only the public `@relaymessenger/sdk` client and
 export RELAY_AGENT_TOKEN="<agent-token>"
 export RELAY_CHAT_ID="<chat-id>"
 export RELAY_MESSAGE_TEXT="Hello from Relay."
+export RELAY_IDEMPOTENCY_KEY="<persisted-logical-operation-id>"
 npm start --workspace relay-send-message-example
 ```
 
-The Message carries a stable idempotency key. Set `RELAY_IDEMPOTENCY_KEY` when
-you need a retry to reuse a previously chosen key.
+Mint and persist `RELAY_IDEMPOTENCY_KEY` once per logical send before the first
+request. Reuse that same key and Message body after an unknown outcome.
