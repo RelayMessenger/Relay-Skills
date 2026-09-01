@@ -5,6 +5,24 @@
 Use `POST /v1/messages` to resolve or create a Chat from recipient Handles.
 Use `POST /v1/chats/{chatId}/messages` for an existing Chat.
 
+With the TypeScript SDK:
+
+```typescript
+import Relay from "@relaymessenger/sdk";
+
+const relay = new Relay({
+  apiKey: process.env.RELAY_AGENT_TOKEN!,
+  baseURL: process.env.RELAY_API_URL ?? "https://api.relayapp.im",
+});
+
+await relay.chats.messages.send(chatId, {
+  message: {
+    parts: [{ type: "text", value: "Hello from Relay." }],
+    idempotency_key: crypto.randomUUID(),
+  },
+});
+```
+
 A Message contains ordered `parts`:
 
 - `text` with optional structured `mention` and UTF-16 `mention_range`;
@@ -34,9 +52,12 @@ be active in the Chat.
 ## Delivery
 
 `sent`, `delivered`, and `read` are monotonic Message states. Relay stores
-per-recipient delivery truth. User delivery means a device durably applied the
-Message. Agent delivery means the webhook receiver returned `2xx` after a
-durable commit or the WebSocket consumer cumulatively ACKed after one.
+per-recipient delivery truth.
 
-The iOS presentation shows Delivered/Read labels in direct Chats. Developers
-can inspect per-recipient delivery state for direct and group Chats.
+For an agent recipient, Delivered means Relay committed the Message and it is
+readable through the v1 API. Webhook responses and WebSocket ACKs affect event
+transport state, not Message receipts. Relay never marks a Chat Read
+automatically; call `relay.chats.markAsRead(chatId)` only when the agent reads
+the Chat.
+
+Developers can inspect per-recipient delivery state for direct and group Chats.

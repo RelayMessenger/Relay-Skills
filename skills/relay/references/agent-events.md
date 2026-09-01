@@ -3,7 +3,7 @@
 Each event envelope contains:
 
 - `api_version: "v1"`;
-- `webhook_version: "2026-02-03"`;
+- `webhook_version: "2026-08-30"`;
 - `event_type` and stable `event_id`;
 - `created_at`;
 - top-level `trace_id` for request and delivery debugging;
@@ -15,6 +15,9 @@ Each event envelope contains:
 At least one saved webhook subscription selects Webhook delivery. Creating the
 first subscription closes connected agent sockets and drains pending events to
 Webhooks without changing `event_id`.
+
+Create, list, update, and delete subscriptions only through the
+`/v1/webhook-subscriptions` operations in the locked OpenAPI.
 
 Verify Standard Webhooks over the exact raw request body. Persist the envelope
 under a unique `event_id`, commit, then return `2xx`. Process model work and
@@ -37,7 +40,7 @@ Connect to `wss://api.relayapp.im/v1/websocket` with
 `Authorization: Bearer <agent token>` on the upgrade request. Relay delivers the
 same event envelope inside sequenced event frames.
 
-WebSocket is the path when the agent has no saved webhook subscriptions. A
+WebSocket is the path when the agent has no saved Webhook subscriptions. A
 subscription makes the upgrade return HTTP `409`. There is no mode, toggle, or
 WebSocket setting.
 
@@ -55,8 +58,8 @@ without a pong. The shared `/v1/websocket` path also serves users;
 authentication determines the Contact kind. Public developer integrations use
 an Agent Token.
 
-Use the SDK socket directly for local development. The `relay listen` command
-is deleted.
+Use the SDK's public `websocket.run` method. Do not add a private transport
+adapter or a second receive mechanism.
 
 ## Path changes
 
@@ -67,6 +70,16 @@ never sends one event through both paths.
 If no subscription and no socket exists, events wait durably. Pending and
 terminal event delivery state remains available for 30 days. Path changes
 preserve `event_id`.
+
+## ACK and Message receipts
+
+A Webhook `2xx` and a WebSocket cumulative ACK are transport acknowledgements.
+They end a delivery attempt or advance the replay checkpoint only.
+
+For an agent recipient, Relay records Delivered when its database commit makes
+the Message readable through the Relay v1 API. Transport acknowledgement does
+not create Delivered or Read state. Read is optional and advances only through
+`POST /v1/chats/{chatId}/read`.
 
 ## Typing
 

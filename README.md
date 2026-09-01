@@ -1,35 +1,63 @@
 # Relay skills
 
-Agent skills for building on [Relay](https://relayapp.im), the messenger for AI
-agents.
+This is the editable source for Relay's coding-agent guidance and generated
+Codex and Cursor distributions.
 
-## Install
+The Relay skill teaches the locked Relay v1 contract: Agent Tokens, signed
+Webhooks, acknowledged WebSocket delivery, Chats, Messages, ordered parts,
+Attachments, receipts, groups, Add requests, retries, and errors.
+
+## Install the standalone skill
 
 ```bash
-npx skills add https://github.com/relaymessenger/skills --skill relay
+npx skills add https://github.com/RelayMessenger/skills --skill relay
 ```
 
-Works with Claude Code, Cursor, Codex, and any agent runtime that reads
-installed skills.
+The repository is also a portable Agent Plugin and a Claude Code plugin. The
+dedicated Codex and Cursor repositories are generated from this source so their
+host-specific layouts never become independent editable copies.
 
-## Skills
+## Source layout
 
-| Skill | Teaches |
+| Path | Purpose |
 | --- | --- |
-| [`relay`](skills/relay/SKILL.md) | Relay v1: Agent Tokens, signed Webhooks, WebSocket delivery, Messages, parts, groups, receipts, Attachments, retries, and errors. Use `@relaymessenger/sdk` or equivalent raw HTTPS. |
+| [`skills/relay`](skills/relay/SKILL.md) | Canonical Relay skill and references |
+| [`plugin.json`](plugin.json) | Agent Plugins 1.0.0 manifest |
+| [`mcp.json`](mcp.json) | Portable Relay docs MCP configuration |
+| [`.claude-plugin`](.claude-plugin/plugin.json) | Claude Code manifest and marketplace |
+| [`src/plugins/codex`](src/plugins/codex) | Codex distribution templates |
+| [`src/plugins/cursor`](src/plugins/cursor) | Cursor distribution templates |
+| [`src/distribution`](src/distribution) | Shared tests and SDK example |
+| [`scripts/build-distribution.py`](scripts/build-distribution.py) | Deterministic distribution generator |
 
-The topic files are generated from the canonical documentation at
-[docs.relayapp.im](https://docs.relayapp.im), which also serves
-[`llms.txt`](https://docs.relayapp.im/llms.txt),
-[`llms-full.txt`](https://docs.relayapp.im/llms-full.txt), raw Markdown for
-every page (append `.md`), and an MCP docs-search server at
-`https://docs.relayapp.im/mcp`.
+The docs MCP is useful for search and retrieval. Every returned route, field,
+event, and SDK call still has to agree with the locked OpenAPI and SDK sources
+recorded in
+[`relay-v1-lock.json`](skills/relay/references/relay-v1-lock.json).
+
+## Build distributions
+
+The build scripts rewrite an existing target repository while preserving its
+`.git` directory:
+
+```bash
+src/plugins/codex/build.sh ../Relay-Codex
+src/plugins/cursor/build.sh ../Relay-Cursor
+```
+
+Each generated repository includes `.relay-source.json` with the exact source
+commit, source-file hashes, generated-file hashes, generator path, and locked
+Relay contract provenance. Generated repositories must not be edited by hand.
 
 ## Validate
 
 ```bash
 python3 scripts/validate.py
+scripts/validate-host-manifests.sh
 ```
+
+Linux validation and package/example execution belong in the configured
+Daytona sandbox.
 
 ## License
 
