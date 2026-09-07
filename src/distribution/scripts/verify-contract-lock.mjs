@@ -46,9 +46,28 @@ const registry = await fetch(
 );
 assert.equal(registry.status, 200);
 const metadata = await registry.json();
-assert.equal(metadata["dist-tags"][lock.sdk.dist_tag], lock.sdk.version);
-assert.ok(metadata.versions[lock.sdk.version]);
+// The lock pins ONE immutable version, verified above by the sha256 of the
+// package.json at a fixed Relay-SDK commit. `dist-tags.<tag>` is a moving
+// pointer that the Relay-SDK lane rewrites on every publish, so asserting the
+// pin equals it fails on every SDK release and proves nothing about this lock.
+// Gate on what the lock actually promises: the channel it names still exists,
+// and the pinned version is still published and not deprecated.
+const channel = metadata["dist-tags"][lock.sdk.dist_tag];
+assert.ok(
+  channel,
+  `${lock.sdk.package} has no ${lock.sdk.dist_tag} dist-tag`,
+);
+const pinned = metadata.versions[lock.sdk.version];
+assert.ok(
+  pinned,
+  `${lock.sdk.package}@${lock.sdk.version} is no longer published`,
+);
+assert.ok(
+  !pinned.deprecated,
+  `${lock.sdk.package}@${lock.sdk.version} is deprecated: ${pinned.deprecated}`,
+);
 
 console.log(
-  `verified Relay v1 lock at Docs ${lock.api.commit} and SDK ${lock.sdk.version}`,
+  `verified Relay v1 lock at Docs ${lock.api.commit} and SDK ${lock.sdk.version}` +
+    ` (${lock.sdk.dist_tag} tag now at ${channel})`,
 );

@@ -131,6 +131,41 @@ if lock.get("api", {}).get("commit") != (
 if lock.get("sdk", {}).get("version") != "0.3.0-staging.4":
     fail("Relay SDK lock version drifted")
 
+# The locked SDK version is repeated on purpose: each literal is a guard that a
+# lock change cannot happen silently. That only holds if a PARTIAL bump fails,
+# so this check names every file to touch and refuses any other version.
+SDK_VERSION_FILES = [
+    "scripts/validate.py",
+    "skills/relay/references/relay-v1-lock.json",
+    "skills/relay/references/sdk-and-auth.md",
+    "src/distribution/examples/send-message/package.json",
+    "src/distribution/scripts/validate-distribution.mjs",
+]
+sdk_version = lock["sdk"]["version"]
+unpinned = [
+    name
+    for name in SDK_VERSION_FILES
+    if sdk_version not in (ROOT / name).read_text(encoding="utf-8")
+]
+if unpinned:
+    fail(
+        f"Relay SDK version {sdk_version} is missing from {unpinned}; "
+        f"a lock bump must edit every file in {SDK_VERSION_FILES}"
+    )
+drifted = sorted(
+    {
+        f"{path.relative_to(ROOT)} pins {found}"
+        for path in text_files()
+        for found in re.findall(
+            r"@relaymessenger/sdk(?:@|\"\s*:\s*\")([0-9][^\"\s`,)]*)",
+            path.read_text(encoding="utf-8"),
+        )
+        if found != sdk_version
+    }
+)
+if drifted:
+    fail(f"Relay SDK version disagrees with the lock {sdk_version}: {drifted}")
+
 for host in ("codex", "cursor"):
     build = ROOT / "src" / "plugins" / host / "build.sh"
     if not build.is_file():
