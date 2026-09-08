@@ -97,8 +97,8 @@ for (const [path, digest] of Object.entries(provenance.generated_files)) {
 }
 
 assert.deepEqual(lock, provenance.relay_v1_lock);
-assert.equal(lock.sdk.version, "0.3.0-staging.4");
-assert.equal(lock.api.commit, "7067d0a734febad683f724ec9386e68e33a25f3d");
+assert.equal(lock.sdk.version, "0.3.1-staging.1");
+assert.equal(lock.api.commit, "1a2245dd775f781b57e0d1f6f3146ebd384c90c3");
 
 const skillPath = join(root, skillRoot, "SKILL.md");
 assert.ok(existsSync(skillPath));
