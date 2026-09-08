@@ -25,7 +25,7 @@ host-specific layouts never become independent editable copies.
 | --- | --- |
 | [`skills/relay`](skills/relay/SKILL.md) | Canonical Relay skill and references |
 | [`plugin.json`](plugin.json) | Agent Plugins 1.0.0 manifest |
-| [`mcp.json`](mcp.json) | Portable Relay docs MCP configuration |
+| [`mcp.json`](mcp.json) | Portable Relay docs MCP configuration (Agent Plugins 1.0.0 spells the transport `streamable-http`; the Claude, Codex, and Cursor host manifests spell the same server `http` because their hosts require it) |
 | [`.claude-plugin`](.claude-plugin/plugin.json) | Claude Code manifest and marketplace |
 | [`src/plugins/codex`](src/plugins/codex) | Codex distribution templates |
 | [`src/plugins/cursor`](src/plugins/cursor) | Cursor distribution templates |
