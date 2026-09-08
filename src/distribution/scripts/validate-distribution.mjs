@@ -22,7 +22,12 @@ const provenance = json(".relay-source.json");
 const host = provenance.distribution;
 assert.ok(["codex", "cursor"].includes(host));
 assert.match(provenance.source_commit, /^[0-9a-f]{40}$/);
-assert.equal(provenance.source_branch, "staging");
+// Only a build generated from the staging tip may ship. A validation build of
+// a proposed change records the branch it came from and cannot be published.
+assert.equal(typeof provenance.publishable, "boolean");
+if (provenance.publishable) {
+  assert.equal(provenance.source_branch, "staging");
+}
 assert.equal(
   provenance.source_repository,
   "https://github.com/RelayMessenger/Relay-Skills",

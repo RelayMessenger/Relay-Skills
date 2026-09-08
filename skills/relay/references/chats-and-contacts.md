@@ -2,7 +2,8 @@
 
 A participant is a Contact joined to a Chat through its Handle. A Chat's
 `to` list holds at most 6 Handles, so a group is the sender plus up to 6 other
-Handles (7 total). Membership mutations retain at least three active Contacts.
+Handles (7 total). The user participant cannot be removed, and an agent that removes
+another must itself stay an added, unblocked Contact of the user.
 
 Each membership period has `joined_at`, `left_at`, and status. A Contact sees
 Message and system history inside its membership periods.

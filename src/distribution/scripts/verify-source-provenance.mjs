@@ -15,31 +15,44 @@ assert.equal(
   provenance.source_repository,
   "https://github.com/RelayMessenger/Relay-Skills",
 );
-assert.equal(provenance.source_branch, "staging");
+// Only a build generated from the staging tip may ship; a validation build of
+// a proposed change proves its source bytes but claims no branch position.
+assert.equal(typeof provenance.publishable, "boolean");
+const publishable = provenance.publishable;
+if (publishable) {
+  assert.equal(provenance.source_branch, "staging");
+}
 
 let source = process.env.RELAY_SKILLS_SOURCE_DIR?.trim();
 let expectedBranchRef;
 if (source) {
   source = resolve(source);
-  const branchRefs = [
-    `refs/heads/${provenance.source_branch}`,
-    `refs/remotes/origin/${provenance.source_branch}`,
-  ];
-  expectedBranchRef = branchRefs.find((ref) => {
-    try {
-      execFileSync("git", ["-C", source, "rev-parse", "--verify", ref], {
-        stdio: "ignore",
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  assert.ok(
-    expectedBranchRef,
-    `source checkout lacks ${provenance.source_branch} branch provenance`,
-  );
+  if (publishable) {
+    const branchRefs = [
+      `refs/heads/${provenance.source_branch}`,
+      `refs/remotes/origin/${provenance.source_branch}`,
+    ];
+    expectedBranchRef = branchRefs.find((ref) => {
+      try {
+        execFileSync("git", ["-C", source, "rev-parse", "--verify", ref], {
+          stdio: "ignore",
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    assert.ok(
+      expectedBranchRef,
+      `source checkout lacks ${provenance.source_branch} branch provenance`,
+    );
+  }
 } else {
+  assert.ok(
+    publishable,
+    "an unpublishable distribution can only be verified against " +
+      "RELAY_SKILLS_SOURCE_DIR; its commit is not on a published branch",
+  );
   source = mkdtempSync(join(tmpdir(), "relay-skills-source-"));
   execFileSync("git", ["init", "--quiet", source]);
   execFileSync("git", [
@@ -77,16 +90,18 @@ const actualCommit = execFileSync(
   { encoding: "utf8" },
 ).trim();
 assert.equal(actualCommit, provenance.source_commit);
-const branchCommit = execFileSync(
-  "git",
-  ["-C", source, "rev-parse", expectedBranchRef],
-  { encoding: "utf8" },
-).trim();
-assert.equal(
-  branchCommit,
-  provenance.source_commit,
-  `${provenance.source_commit} is not the exact ${provenance.source_branch} head`,
-);
+if (publishable) {
+  const branchCommit = execFileSync(
+    "git",
+    ["-C", source, "rev-parse", expectedBranchRef],
+    { encoding: "utf8" },
+  ).trim();
+  assert.equal(
+    branchCommit,
+    provenance.source_commit,
+    `${provenance.source_commit} is not the exact ${provenance.source_branch} head`,
+  );
+}
 
 for (const [path, expected] of Object.entries(provenance.source_files)) {
   const actual = createHash("sha256")
@@ -95,6 +110,7 @@ for (const [path, expected] of Object.entries(provenance.source_files)) {
   assert.equal(actual, expected, `source file changed: ${path}`);
 }
 
+const shipping = publishable ? "" : " (unpublishable validation build)";
 console.log(
-  `verified ${provenance.distribution} source bytes at ${actualCommit}`,
+  `verified ${provenance.distribution} source bytes at ${actualCommit}${shipping}`,
 );

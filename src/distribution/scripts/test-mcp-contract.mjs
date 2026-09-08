@@ -21,13 +21,21 @@ assert.ok(
   "live docs search still returns a retired receive route",
 );
 
-const webhook = await searchRelay(
-  "message.received webhook_version 2026-08-30 api_version v1",
+// The event pages carry the payload version; the envelope page is the only
+// page that names the envelope fields, so each marker is asked of its own page.
+const event = await searchRelay("message.received payload MessageEvent 2026-08-30");
+assert.ok(
+  event.includes("2026-08-30"),
+  "live docs message.received page is missing the payload version 2026-08-30",
+);
+
+const envelope = await searchRelay(
+  "Relay webhook event envelope webhook_version api_version fields",
 );
 for (const marker of ["webhook_version", "2026-08-30", "api_version"]) {
   assert.ok(
-    webhook.includes(marker),
-    `live docs webhook search is missing ${marker}`,
+    envelope.includes(marker),
+    `live docs webhook envelope page is missing ${marker}`,
   );
 }
 
