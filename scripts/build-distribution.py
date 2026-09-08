@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -50,30 +51,57 @@ def copy_tree(source: Path, target: Path) -> None:
     shutil.copytree(source, target, dirs_exist_ok=True, copy_function=shutil.copy2)
 
 
-def source_identity() -> tuple[str, str]:
+def current_branch() -> str:
+    """Name the branch under HEAD.
+
+    A CI checkout leaves HEAD detached, so `git symbolic-ref` exits 128 there.
+    The event that produced the checkout still names the branch: the pull
+    request's source branch first, then the pushed ref.
+    """
+    named = subprocess.run(
+        ["git", "-C", str(ROOT), "symbolic-ref", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if named.returncode == 0:
+        return named.stdout.strip()
+    for variable in ("GITHUB_HEAD_REF", "GITHUB_REF_NAME"):
+        name = os.environ.get(variable, "").strip()
+        if name:
+            return name
+    raise SystemExit(
+        "HEAD is detached and neither GITHUB_HEAD_REF nor GITHUB_REF_NAME "
+        "names the branch, so the source branch cannot be recorded"
+    )
+
+
+def source_identity() -> tuple[str, str, bool]:
+    """Return the source branch, the source commit, and whether it may ship.
+
+    Only the staging tip may ship. Any other tree is still generated so that a
+    proposed change can be validated before it reaches staging, and it is
+    marked unpublishable so nothing can ship from it.
+    """
     dirty = subprocess.check_output(
         ["git", "-C", str(ROOT), "status", "--porcelain"],
         text=True,
     )
     if dirty:
         raise SystemExit("Relay-Skills must be clean before generation")
-    branch = subprocess.check_output(
-        ["git", "-C", str(ROOT), "symbolic-ref", "--short", "HEAD"],
-        text=True,
-    ).strip()
-    if branch != "staging":
-        raise SystemExit("Relay-Skills distributions must be generated from staging")
+    branch = current_branch()
     commit = subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
         text=True,
     ).strip()
+    if branch != "staging":
+        return branch, commit, False
     branch_commit = subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "refs/heads/staging"],
         text=True,
     ).strip()
     if commit != branch_commit:
         raise SystemExit("Relay-Skills HEAD must equal refs/heads/staging")
-    return branch, commit
+    return branch, commit, True
 
 
 def source_file_hashes(host: str) -> dict[str, str]:
@@ -134,7 +162,9 @@ def package_manifest(host: str, version: str) -> dict:
     return value
 
 
-def build(host: str, target: Path, branch: str, commit: str) -> None:
+def build(
+    host: str, target: Path, branch: str, commit: str, publishable: bool
+) -> None:
     clear_target(target)
 
     version = json.loads(
@@ -194,6 +224,7 @@ def build(host: str, target: Path, branch: str, commit: str) -> None:
         "source_repository": SOURCE_REPOSITORY,
         "source_branch": branch,
         "source_commit": commit,
+        "publishable": publishable,
         "generator": "scripts/build-distribution.py",
         "relay_v1_lock": lock,
         "source_files": source_file_hashes(host),
@@ -207,9 +238,12 @@ def main() -> None:
     target = Path(args.target).expanduser().resolve()
     if target == ROOT or ROOT in target.parents:
         raise SystemExit("distribution target must be outside Relay-Skills")
-    branch, commit = source_identity()
-    build(args.host, target, branch, commit)
-    print(f"built Relay {args.host} distribution from {commit} into {target}")
+    branch, commit, publishable = source_identity()
+    build(args.host, target, branch, commit, publishable)
+    label = "" if publishable else " (unpublishable validation build)"
+    print(
+        f"built Relay {args.host} distribution from {commit} into {target}{label}"
+    )
 
 
 if __name__ == "__main__":

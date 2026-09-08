@@ -47,6 +47,7 @@ custom origin but does not enforce HTTPS for you.
 
 Use only the public resources exported by this version:
 
+- `agents`, whose only method is `delete(handle)`;
 - `chats`, including `messages` and `participants`;
 - `messages`;
 - `attachments`;
@@ -57,6 +58,11 @@ Use only the public resources exported by this version:
 - `websocket`;
 - `contactCard`;
 - `contactRequests`.
+
+Create a developer agent with the command line, `npx relaymessenger
+agents create`, which mints the Agent Token and gives the agent a `.dev`
+handle. The Relay Console manages an organization's agents; it does not
+create a developer agent.
 
 The SDK defaults to a 15-second request timeout and two retries. Message sends
 are retried only when they carry an idempotency key. Reads, idempotent HTTP
