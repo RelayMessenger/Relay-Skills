@@ -72,7 +72,7 @@ required_markers = [
     "does not create Delivered or Read",
     "POST /v1/contact_requests",
     "contactRequests.create",
-    "@relaymessenger/sdk@0.3.0-staging.4",
+    "@relaymessenger/sdk@0.3.1-staging.1",
     "relay.chats.messages.send",
     "relay.chats.markAsRead",
     "relayApiOrigin(process.env.RELAY_API_URL)",
@@ -125,10 +125,10 @@ if claude.get("mcpServers", {}).get("relayDocs", {}).get("url") != (
 
 lock = json_object(LOCK_PATH)
 if lock.get("api", {}).get("commit") != (
-    "7067d0a734febad683f724ec9386e68e33a25f3d"
+    "1a2245dd775f781b57e0d1f6f3146ebd384c90c3"
 ):
-    fail("Relay Docs lock commit drifted")
-if lock.get("sdk", {}).get("version") != "0.3.0-staging.4":
+    fail("Relay contract lock commit drifted")
+if lock.get("sdk", {}).get("version") != "0.3.1-staging.1":
     fail("Relay SDK lock version drifted")
 
 # The locked SDK version is repeated on purpose: each literal is a guard that a

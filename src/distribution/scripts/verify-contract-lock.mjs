@@ -13,18 +13,22 @@ const raw = (repository, commit, path) => {
   return `https://raw.githubusercontent.com${parsed.pathname}/${commit}/${path}`;
 };
 
+// The contract's home is Relay-Server, which is private, so raw.githubusercontent
+// answers 404 there. The lock names a public mirror of the same bytes in
+// Relay-SDK, and `api.openapi_sha256` is what proves the mirror is the right
+// generation. The skill text has its own public home in Relay-Docs.
 for (const [repository, commit, path, expected] of [
   [
-    lock.api.repository,
-    lock.api.commit,
-    lock.api.openapi_path,
+    lock.api.public_source.repository,
+    lock.api.public_source.commit,
+    lock.api.public_source.path,
     lock.api.openapi_sha256,
   ],
   [
-    lock.api.repository,
-    lock.api.commit,
-    lock.api.skill_path,
-    lock.api.skill_sha256,
+    lock.docs.repository,
+    lock.docs.commit,
+    lock.docs.skill_path,
+    lock.docs.skill_sha256,
   ],
   [
     lock.sdk.repository,
@@ -68,6 +72,7 @@ assert.ok(
 );
 
 console.log(
-  `verified Relay v1 lock at Docs ${lock.api.commit} and SDK ${lock.sdk.version}` +
-    ` (${lock.sdk.dist_tag} tag now at ${channel})`,
+  `verified Relay v1 lock: contract ${lock.api.commit} mirrored at ` +
+    `${lock.api.public_source.commit}, docs ${lock.docs.commit}, ` +
+    `SDK ${lock.sdk.version} (${lock.sdk.dist_tag} tag now at ${channel})`,
 );
